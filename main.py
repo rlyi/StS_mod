@@ -1,0 +1,116 @@
+"""main.py — точка входа для CommunicationMod.
+
+config.properties:
+  command=python C:/StS_mod/main.py
+  runAtGameStart=true
+
+ВАЖНО: stdout/stdin заняты протоколом CommunicationMod.
+Весь вывод — в logs/ai.log и logs/ai_errors.log.
+
+Порядок запуска:
+  1. Создаём Coordinator и сразу signal_ready() — до любых тяжёлых импортов
+  2. Загружаем агентов (SB3, sklearn — могут занять несколько секунд)
+  3. Переключаем callback на боевой
+"""
+
+import os
+import sys
+import logging
+
+# ── Логирование в файл (stdout занят протоколом игры) ─────────────────
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+_LOG_DIR = os.path.join(_ROOT, "logs")
+os.makedirs(_LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s %(message)s",
+    handlers=[
+        logging.FileHandler(os.path.join(_LOG_DIR, "ai.log"), encoding="utf-8"),
+    ],
+)
+log = logging.getLogger("StSAI")
+sys.stderr = open(os.path.join(_LOG_DIR, "ai_errors.log"), "a", encoding="utf-8")
+
+sys.path.insert(0, _ROOT)
+
+# spirecomm импортируется быстро — можно сразу
+from spirecomm.communication.coordinator import Coordinator
+from spirecomm.communication.action import StateAction, ProceedAction
+
+
+def _screen_str(game) -> str:
+    s = str(game.screen_type).upper()
+    return s.split(".")[-1] if "." in s else s
+
+
+class SlayTheSpireAI:
+    def __init__(self):
+        self._combat_agent = None
+        self._meta_agent   = None
+        self._agents_ready = False
+        self._last_screen  = ""
+        self._turn         = 0
+
+        self.coordinator = Coordinator()
+
+        # ── Шаг 1: signal_ready() ДО загрузки тяжёлых модулей ─────────
+        # CommunicationMod даёт только 10 секунд. Успеваем до таймаута.
+        self.coordinator.register_state_change_callback(self._handle_loading)
+        self.coordinator.register_out_of_game_callback(lambda: StateAction())
+        self.coordinator.register_command_error_callback(self._handle_error)
+        self.coordinator.signal_ready()
+        log.info("signal_ready отправлен — загружаем агентов...")
+
+        # ── Шаг 2: загружаем тяжёлые агенты ───────────────────────────
+        from agents.combat_agent import CombatAgent
+        from agents.meta_agent import MetaAgent
+
+        self._combat_agent = CombatAgent()
+        self._meta_agent   = MetaAgent()
+        self._agents_ready = True
+
+        # ── Шаг 3: переключаем callback на боевой ─────────────────────
+        self.coordinator.register_state_change_callback(self._handle_game_state)
+        log.info("Агенты готовы. Ожидание игры...")
+
+    # ── Callbacks ────────────────────────────────────────────────────
+
+    def _handle_loading(self, game):
+        """Пока агенты грузятся — просто опрашиваем состояние."""
+        return StateAction()
+
+    def _handle_error(self, error):
+        log.warning("Ошибка от игры: %s", error)
+        return StateAction()
+
+    def _handle_game_state(self, game):
+        screen = _screen_str(game)
+        player = game.player  # может быть None на стартовых экранах
+
+        if screen == "NONE":
+            if player is None:
+                return StateAction()
+            self._turn += 1
+            if self._turn == 1:
+                log.info("Бой начался | этаж=%s HP=%d/%d",
+                         getattr(game, "floor", "?"),
+                         player.current_hp, player.max_hp)
+            return self._combat_agent.act(game)
+        else:
+            if screen != self._last_screen:
+                hp_str = f"{player.current_hp}/{player.max_hp}" if player else "?/?"
+                log.info("Экран: %-20s | этаж=%s HP=%s gold=%s",
+                         screen, getattr(game, "floor", "?"),
+                         hp_str, getattr(game, "gold", "?"))
+                self._last_screen = screen
+            self._turn = 0
+            return self._meta_agent.act(game)
+
+    def run(self):
+        self.coordinator.run()  # блокирует навсегда
+
+
+if __name__ == "__main__":
+    ai = SlayTheSpireAI()
+    ai.run()
