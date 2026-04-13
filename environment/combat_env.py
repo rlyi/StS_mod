@@ -165,11 +165,12 @@ class CombatEnv(gym.Env):
         if screen == "COMBAT_REWARD":
             screen_obj = getattr(game, "screen", None)
             rewards = getattr(screen_obj, "rewards", [])
-            # Сначала подбираем карточную награду, если она есть
+            # Подбираем все незолотые награды: карты, зелья, реликвии
             for i, reward in enumerate(rewards):
-                rt = str(getattr(reward, "reward_type", "")).upper()
-                if "CARD" in rt:
-                    log.debug("COMBAT_REWARD: выбираем награду #%d (CARD)", i)
+                rt = str(getattr(reward, "reward_type", "")).upper().split(".")[-1]
+                if rt in ("CARD", "POTION", "RELIC", "RELIC_AND_GOLD",
+                          "EMERALD_KEY", "SAPPHIRE_KEY", "STOLEN_GOLD"):
+                    log.debug("COMBAT_REWARD: выбираем награду #%d (%s)", i, rt)
                     return ChooseAction(i)
             # Все награды обработаны — завершаем эпизод
             floor = getattr(game, "floor", "?")
