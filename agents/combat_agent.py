@@ -44,7 +44,7 @@ def game_to_obs(game) -> np.ndarray:
     obs[3] = np.clip(_get_power(player, "Strength")  / 10.0, -1.0, 1.0)
     obs[4] = np.clip(_get_power(player, "Dexterity") / 10.0, -1.0, 1.0)
     obs[5] = min(_get_power(player, "Vulnerable") / 5.0, 1.0)
-    obs[6] = min(_get_power(player, "Weak")       / 5.0, 1.0)
+    obs[6] = min(_get_power(player, "Weakened")   / 5.0, 1.0)
     obs[7] = min(_get_power(player, "Poison")     / 20.0, 1.0)
 
     # Игрок — колода
@@ -208,16 +208,10 @@ def _intent_str(intent) -> str:
     return s.split(".")[-1] if "." in s else s
 
 
-_seen_power_ids: set = set()
-
 def _get_power(entity, power_id: str) -> float:
     """Возвращает количество стаков power_id у entity (0 если нет)."""
     for power in getattr(entity, "powers", []):
-        pid = getattr(power, "power_id", "")
-        if pid and pid not in _seen_power_ids:
-            logging.getLogger("PowerIDs").info("power_id в игре: %r", pid)
-            _seen_power_ids.add(pid)
-        if pid == power_id:
+        if getattr(power, "power_id", "") == power_id:
             return float(getattr(power, "amount", 0))
     return 0.0
 

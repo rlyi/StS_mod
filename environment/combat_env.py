@@ -132,7 +132,8 @@ class CombatEnv(gym.Env):
             self._coordinator.signal_ready()
             self._coordinator.run()
         except Exception as e:
-            log.error("Coordinator упал: %s", e)
+            import traceback
+            log.error("Coordinator упал: %s\n%s", e, traceback.format_exc())
             self._state_q.put(("error", str(e), None))
 
     def _handle_error(self, error):
@@ -153,17 +154,25 @@ class CombatEnv(gym.Env):
         if screen == "GAME_OVER":
             victory = getattr(getattr(game, "screen", None), "victory", False)
             outcome = "win" if victory else "lose"
+            floor = getattr(game, "floor", "?")
+            hp = f"{player.current_hp}/{player.max_hp}" if player else "?/?"
+            log.info("РАН ЗАВЕРШЁН | исход=%-4s этаж=%-2s HP=%s", outcome, floor, hp)
             self._state_q.put(("terminal", outcome, game))
             return ProceedAction()
 
         # ── Конец боя (появился экран наград) ─────────────────────────
         if screen == "COMBAT_REWARD":
+            floor = getattr(game, "floor", "?")
+            hp = f"{player.current_hp}/{player.max_hp}" if player else "?/?"
+            log.info("РАН ЗАВЕРШЁН | исход=win  этаж=%-2s HP=%s", floor, hp)
             self._state_q.put(("terminal", "win", game))
             return ProceedAction()
 
         # ── Не бой — навигируем автоматически ────────────────────────
         if screen != "NONE":
-            return _auto_navigate(screen, game)
+            action = _auto_navigate(screen, game)
+            log.debug("Навигация: %-20s → %s", screen, type(action).__name__)
+            return action
 
         # ── В бою: player может быть None на старте ───────────────────
         if player is None:
