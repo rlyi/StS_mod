@@ -16,6 +16,7 @@
 """
 
 import queue
+import random
 import threading
 import time
 import logging
@@ -162,6 +163,15 @@ class CombatEnv(gym.Env):
 
         # ── Конец боя (появился экран наград) ─────────────────────────
         if screen == "COMBAT_REWARD":
+            screen_obj = getattr(game, "screen", None)
+            rewards = getattr(screen_obj, "rewards", [])
+            # Сначала подбираем карточную награду, если она есть
+            for i, reward in enumerate(rewards):
+                rt = str(getattr(reward, "reward_type", "")).upper()
+                if "CARD" in rt:
+                    log.debug("COMBAT_REWARD: выбираем награду #%d (CARD)", i)
+                    return ChooseAction(i)
+            # Все награды обработаны — завершаем эпизод
             floor = getattr(game, "floor", "?")
             hp = f"{player.current_hp}/{player.max_hp}" if player else "?/?"
             log.info("РАН ЗАВЕРШЁН | исход=win  этаж=%-2s HP=%s", floor, hp)
@@ -223,50 +233,54 @@ def _drain(q: queue.Queue):
 
 
 def _auto_navigate(screen: str, game):
-    """Простые правила навигации для небоевых экранов (во время обучения PPO)."""
+    """Случайная навигация для небоевых экранов (во время обучения PPO).
+
+    Рандомизация нужна чтобы CombatAgent видел разные карты, врагов и ситуации.
+    """
+    s = getattr(game, "screen", None)
+
     if screen == "MAP":
-        return ChooseAction(0)
+        nodes = getattr(s, "next_nodes", [])
+        return ChooseAction(random.randrange(len(nodes)) if nodes else 0)
 
     elif screen == "CARD_REWARD":
-        return ProceedAction()  # Пропускаем карты при обучении
+        cards = getattr(s, "cards", [])
+        if not cards:
+            return ProceedAction()
+        if random.random() < 0.8:
+            return ChooseAction(random.randrange(len(cards)))
+        return ProceedAction()
 
     elif screen in ("CHEST", "OPEN_CHEST"):
         return ProceedAction()
 
     elif screen in ("GRID", "HAND_SELECT"):
-        screen_obj = getattr(game, "screen", None)
-        if screen_obj and getattr(screen_obj, "confirm_up", False):
+        if s and getattr(s, "confirm_up", False):
             return ProceedAction()
-        return ChooseAction(0)
+        cards = getattr(s, "cards", [])
+        return ChooseAction(random.randrange(len(cards)) if cards else 0)
 
     elif screen == "BOSS_REWARD":
-        return ChooseAction(0)
+        relics = getattr(s, "relics", [])
+        return ChooseAction(random.randrange(len(relics)) if relics else 0)
 
     elif screen == "REST":
-        options = getattr(getattr(game, "screen", None), "rest_options", [])
+        options = getattr(s, "rest_options", [])
         if not options:
-            return ProceedAction()  # Отдых завершён — жмём Proceed
-        player = game.player
-        if player is not None:
-            hp_pct = player.current_hp / max(player.max_hp, 1)
-            opt_strs = [str(o).upper() for o in options]
-            if hp_pct < 0.5:
-                for i, o in enumerate(opt_strs):
-                    if o in ("REST", "SLEEP"):
-                        return ChooseAction(i)
-            else:
-                for i, o in enumerate(opt_strs):
-                    if o == "SMITH":
-                        return ChooseAction(i)
-        return ChooseAction(0)
+            return ProceedAction()
+        return ChooseAction(random.randrange(len(options)))
 
     elif screen == "EVENT":
-        return ChooseAction(0)
+        options = getattr(s, "options", [])
+        return ChooseAction(random.randrange(len(options)) if options else 0)
 
     elif screen == "COMBAT_REWARD":
         return ProceedAction()
 
     elif screen == "GAME_OVER":
+        return ProceedAction()
+
+    elif screen in ("SHOP_SCREEN", "SHOP"):
         return ProceedAction()
 
     else:
