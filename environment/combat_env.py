@@ -266,7 +266,7 @@ def _auto_navigate(screen: str, game):
 
     elif screen in ("GRID", "HAND_SELECT"):
         if s and getattr(s, "confirm_up", False):
-            return ProceedAction()
+            return ChooseAction(0)
         cards = getattr(s, "cards", [])
         if not cards:
             return ProceedAction()

@@ -150,7 +150,7 @@ class MetaAgent(BaseMetaAgent):
 
         elif screen in ("GRID", "HAND_SELECT"):
             if s and getattr(s, "confirm_up", False):
-                return ProceedAction()
+                return ChooseAction(0)
             cards = getattr(s, "cards", [])
             return ChooseAction(random.randrange(len(cards)) if cards else 0)
 
