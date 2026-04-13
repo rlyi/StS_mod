@@ -18,16 +18,22 @@
 import queue
 import threading
 import time
+import logging
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
 from spirecomm.communication.coordinator import Coordinator
-from spirecomm.communication.action import EndTurnAction, ProceedAction, ChooseAction
+from spirecomm.communication.action import (
+    EndTurnAction, ProceedAction, ChooseAction, StateAction, StartGameAction
+)
+from spirecomm.spire.character import PlayerClass
 
 from config import OBS_SIZE, ACTION_SIZE
-from agents.combat_agent import game_to_obs, action_to_spirecomm
+from agents.combat_agent import game_to_obs, action_to_spirecomm, get_valid_actions
 from environment.reward import calculate_reward
+
+log = logging.getLogger("CombatEnv")
 
 
 class CombatEnv(gym.Env):
@@ -64,7 +70,7 @@ class CombatEnv(gym.Env):
         self._done = False
         self._prev_game = None
 
-        game = self._wait_for_combat_state(timeout=180)
+        game = self._wait_for_combat_state(timeout=300)
         if game is None:
             raise RuntimeError(
                 "Тайм-аут ожидания боя. Запустите Slay the Spire с CommunicationMod."
@@ -98,7 +104,7 @@ class CombatEnv(gym.Env):
             _, outcome, game = msg
             reward = 2.0 if outcome == "win" else -2.0
             self._done = True
-            obs = game_to_obs(game) if game else np.zeros(OBS_SIZE, dtype=np.float32)
+            obs = game_to_obs(game) if (game and game.player) else np.zeros(OBS_SIZE, dtype=np.float32)
             return obs, reward, True, False, {"outcome": outcome}
 
         # Ошибка или неизвестное сообщение
@@ -121,21 +127,33 @@ class CombatEnv(gym.Env):
         """Фоновый поток: читает состояния игры, отправляет действия."""
         try:
             self._coordinator.register_state_change_callback(self._handle_state)
-            self._coordinator.register_out_of_game_callback(lambda: ProceedAction())
+            self._coordinator.register_out_of_game_callback(self._handle_out_of_game)
+            self._coordinator.register_command_error_callback(self._handle_error)
             self._coordinator.signal_ready()
-            self._coordinator.run()  # блокирует навсегда
+            self._coordinator.run()
         except Exception as e:
+            log.error("Coordinator упал: %s", e)
             self._state_q.put(("error", str(e), None))
+
+    def _handle_error(self, error):
+        log.warning("Ошибка от игры: %s", error)
+        return StateAction()
+
+    def _handle_out_of_game(self):
+        """Вне боя (главное меню) — автоматически стартуем новый ран."""
+        log.info("Вне игры — запускаем новый ран Ironclad")
+        return StartGameAction(PlayerClass.IRONCLAD, ascension_level=0)
 
     def _handle_state(self, game):
         """Callback spirecomm — вызывается в фоновом потоке на каждое обновление."""
         screen = _screen_str(game)
+        player = game.player
 
         # ── Конец игры ────────────────────────────────────────────────
         if screen == "GAME_OVER":
             victory = getattr(getattr(game, "screen", None), "victory", False)
-            if not victory:
-                self._state_q.put(("terminal", "lose", game))
+            outcome = "win" if victory else "lose"
+            self._state_q.put(("terminal", outcome, game))
             return ProceedAction()
 
         # ── Конец боя (появился экран наград) ─────────────────────────
@@ -147,6 +165,10 @@ class CombatEnv(gym.Env):
         if screen != "NONE":
             return _auto_navigate(screen, game)
 
+        # ── В бою: player может быть None на старте ───────────────────
+        if player is None:
+            return StateAction()
+
         # ── В бою: ждём действие от основного потока ─────────────────
         self._state_q.put(("state", game))
         try:
@@ -154,9 +176,15 @@ class CombatEnv(gym.Env):
         except queue.Empty:
             return EndTurnAction()
 
+        # Применяем маску: если PPO выбрал невалидное действие — берём первое допустимое
+        mask = get_valid_actions(game)
+        if not mask[action_int]:
+            valid = [i for i, v in enumerate(mask) if v]
+            action_int = valid[0] if valid else 15
+
         return action_to_spirecomm(action_int, game)
 
-    def _wait_for_combat_state(self, timeout: int = 180):
+    def _wait_for_combat_state(self, timeout: int = 300):
         """Блокирует до получения первого состояния боя."""
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -189,16 +217,48 @@ def _auto_navigate(screen: str, game):
     """Простые правила навигации для небоевых экранов (во время обучения PPO)."""
     if screen == "MAP":
         return ChooseAction(0)
-    elif screen in ("CARD_REWARD",):
-        return ProceedAction()  # Пропустить карты при обучении
+
+    elif screen == "CARD_REWARD":
+        return ProceedAction()  # Пропускаем карты при обучении
+
     elif screen in ("CHEST", "OPEN_CHEST"):
         return ProceedAction()
+
+    elif screen in ("GRID", "HAND_SELECT"):
+        screen_obj = getattr(game, "screen", None)
+        if screen_obj and getattr(screen_obj, "confirm_up", False):
+            return ProceedAction()
+        return ChooseAction(0)
+
     elif screen == "BOSS_REWARD":
         return ChooseAction(0)
+
     elif screen == "REST":
-        hp = game.player.current_hp / max(game.player.max_hp, 1)
-        return ChooseAction(0)  # Отдохнуть если мало HP, Smith если много
+        options = getattr(getattr(game, "screen", None), "rest_options", [])
+        if not options:
+            return ProceedAction()  # Отдых завершён — жмём Proceed
+        player = game.player
+        if player is not None:
+            hp_pct = player.current_hp / max(player.max_hp, 1)
+            opt_strs = [str(o).upper() for o in options]
+            if hp_pct < 0.5:
+                for i, o in enumerate(opt_strs):
+                    if o in ("REST", "SLEEP"):
+                        return ChooseAction(i)
+            else:
+                for i, o in enumerate(opt_strs):
+                    if o == "SMITH":
+                        return ChooseAction(i)
+        return ChooseAction(0)
+
     elif screen == "EVENT":
         return ChooseAction(0)
+
+    elif screen == "COMBAT_REWARD":
+        return ProceedAction()
+
+    elif screen == "GAME_OVER":
+        return ProceedAction()
+
     else:
         return ProceedAction()

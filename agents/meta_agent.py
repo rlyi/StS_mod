@@ -134,10 +134,13 @@ class MetaAgent(BaseMetaAgent):
             return ProceedAction()
 
         elif screen == "EVENT":
-            # На floor=0 это благословение Neow — choose там недоступен
-            if getattr(game, "floor", 1) == 0:
-                return StateAction()
             return ChooseAction(self.choose_event(game))
+
+        elif screen in ("GRID", "HAND_SELECT"):
+            screen_obj = getattr(game, "screen", None)
+            if screen_obj and getattr(screen_obj, "confirm_up", False):
+                return ProceedAction()
+            return ChooseAction(0)
 
         elif screen == "BOSS_REWARD":
             return ChooseAction(0)  # первая реликвия
@@ -152,8 +155,10 @@ class MetaAgent(BaseMetaAgent):
     # ── Вспомогательные ───────────────────────────────────────────────
 
     def _handle_rest(self, game) -> "Action":
-        hp_pct   = game.player.current_hp / max(game.player.max_hp, 1)
         options  = getattr(getattr(game, "screen", None), "rest_options", [])
+        if not options:
+            return ProceedAction()  # Отдых завершён — жмём Proceed
+        hp_pct   = game.player.current_hp / max(game.player.max_hp, 1)
         opt_strs = [str(o).upper() for o in options]
 
         if hp_pct < 0.5:

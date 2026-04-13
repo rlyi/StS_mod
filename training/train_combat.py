@@ -14,20 +14,36 @@
 import os
 import sys
 
-# Добавляем корень проекта в путь, чтобы импорты работали
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+
+# ── Логирование в файл (stdout/stderr заняты протоколом CommunicationMod) ──
+import logging
+
+_LOG_DIR = os.path.join(_ROOT, "logs")
+os.makedirs(_LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s %(message)s",
+    handlers=[
+        logging.FileHandler(os.path.join(_LOG_DIR, "train_combat.log"), encoding="utf-8"),
+    ],
+)
+log = logging.getLogger("train_combat")
+
+# Перенаправляем stderr в файл (stdout уже занят протоколом)
+sys.stderr = open(os.path.join(_LOG_DIR, "train_errors.log"), "a", encoding="utf-8")
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import (
-    CheckpointCallback, EvalCallback
-)
+from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 
 from environment.combat_env import CombatEnv
 from config import MODELS_DIR, SEED
 
 TOTAL_TIMESTEPS = 500_000
-LOG_DIR  = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "combat")
+LOG_DIR  = os.path.join(_ROOT, "logs", "combat")
 SAVE_DIR = MODELS_DIR
 
 
@@ -35,6 +51,7 @@ def main():
     os.makedirs(LOG_DIR,  exist_ok=True)
     os.makedirs(SAVE_DIR, exist_ok=True)
 
+    log.info("Инициализация окружения...")
     env = Monitor(CombatEnv())
 
     # Сохранять чекпоинт каждые 10 000 шагов
@@ -47,12 +64,12 @@ def main():
     model = PPO(
         policy="MlpPolicy",
         env=env,
-        verbose=1,
+        verbose=0,          # не пишем в stdout
         seed=SEED,
+        device="cpu",       # MlpPolicy эффективнее на CPU
         tensorboard_log=LOG_DIR,
-        # Гиперпараметры (можно настроить)
-        n_steps=512,
-        batch_size=64,
+        n_steps=128,
+        batch_size=32,
         n_epochs=10,
         learning_rate=3e-4,
         gamma=0.99,
@@ -61,18 +78,18 @@ def main():
         ent_coef=0.01,
     )
 
-    print(f"[train_combat] Начало обучения: {TOTAL_TIMESTEPS} шагов")
-    print(f"[train_combat] TensorBoard: tensorboard --logdir {LOG_DIR}")
+    log.info("Начало обучения: %d шагов", TOTAL_TIMESTEPS)
+    log.info("TensorBoard: tensorboard --logdir %s", LOG_DIR)
 
     model.learn(
         total_timesteps=TOTAL_TIMESTEPS,
         callback=checkpoint_cb,
-        progress_bar=True,
+        progress_bar=False,  # прогресс-бар пишет в stdout
     )
 
     final_path = os.path.join(SAVE_DIR, "combat_ppo")
     model.save(final_path)
-    print(f"[train_combat] Модель сохранена: {final_path}.zip")
+    log.info("Модель сохранена: %s.zip", final_path)
 
 
 if __name__ == "__main__":
