@@ -148,9 +148,17 @@ class MetaAgent(BaseMetaAgent):
             options = getattr(s, "options", [])
             return ChooseAction(random.randrange(len(options)) if options else 0)
 
-        elif screen in ("GRID", "HAND_SELECT"):
+        elif screen == "HAND_SELECT":
+            num_cards = getattr(s, "num_cards", 1)
+            selected  = getattr(s, "selected_cards", [])
+            cards     = getattr(s, "cards", [])
+            if len(selected) >= num_cards or not cards:
+                return ProceedAction()
+            return ChooseAction(random.randrange(len(cards)))
+
+        elif screen == "GRID":
             if s and getattr(s, "confirm_up", False):
-                return ChooseAction(0)
+                return ProceedAction()
             cards = getattr(s, "cards", [])
             return ChooseAction(random.randrange(len(cards)) if cards else 0)
 

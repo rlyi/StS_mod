@@ -264,9 +264,17 @@ def _auto_navigate(screen: str, game):
     elif screen in ("CHEST", "OPEN_CHEST"):
         return ProceedAction()
 
-    elif screen in ("GRID", "HAND_SELECT"):
+    elif screen == "HAND_SELECT":
+        num_cards = getattr(s, "num_cards", 1)
+        selected  = getattr(s, "selected_cards", [])
+        cards     = getattr(s, "cards", [])
+        if len(selected) >= num_cards or not cards:
+            return ProceedAction()
+        return ChooseAction(random.randrange(len(cards)))
+
+    elif screen == "GRID":
         if s and getattr(s, "confirm_up", False):
-            return ChooseAction(0)
+            return ProceedAction()
         cards = getattr(s, "cards", [])
         if not cards:
             return ProceedAction()
