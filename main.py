@@ -81,12 +81,17 @@ class SlayTheSpireAI:
         return StateAction()
 
     def _handle_error(self, error):
-        log.warning("Ошибка от игры: %s", error)
+        self._error_count = getattr(self, "_error_count", 0) + 1
+        log.warning("Ошибка от игры (#%d): %s", self._error_count, error)
+        if self._error_count >= 3:
+            self._error_count = 0
+            return ProceedAction()
         return StateAction()
 
     def _handle_game_state(self, game):
         screen = _screen_str(game)
         player = game.player  # может быть None на стартовых экранах
+
 
         if screen == "NONE":
             if player is None:

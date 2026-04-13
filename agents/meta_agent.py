@@ -1,5 +1,6 @@
 import os
 import pickle
+import random
 import logging
 import numpy as np
 from spirecomm.communication.action import ProceedAction, ChooseAction, StateAction
@@ -113,43 +114,55 @@ class MetaAgent(BaseMetaAgent):
 
     def act(self, game):
         screen = _screen_str(game)
+        s = getattr(game, "screen", None)
 
         if screen == "MAP":
-            return ChooseAction(self.choose_path(game))
+            nodes = getattr(s, "next_nodes", [])
+            return ChooseAction(random.randrange(len(nodes)) if nodes else 0)
 
         elif screen == "CARD_REWARD":
-            idx = self.choose_card(game)
-            return ProceedAction() if idx < 0 else ChooseAction(idx)
+            cards = getattr(s, "cards", [])
+            if not cards:
+                return ProceedAction()
+            # 80% берём случайную карту, 20% пропускаем
+            if random.random() < 0.8:
+                return ChooseAction(random.randrange(len(cards)))
+            return ProceedAction()
 
         elif screen == "COMBAT_REWARD":
             return ProceedAction()
 
-        elif screen in ("SHOP_SCREEN", "SHOP"):
+        elif screen in ("SHOP_SCREEN", "SHOP_ROOM"):
             return ProceedAction()
 
         elif screen == "REST":
-            return self._handle_rest(game)
+            options = getattr(s, "rest_options", [])
+            if not options:
+                return ProceedAction()
+            return ChooseAction(random.randrange(len(options)))
 
         elif screen in ("CHEST", "OPEN_CHEST"):
             return ProceedAction()
 
         elif screen == "EVENT":
-            return ChooseAction(self.choose_event(game))
+            options = getattr(s, "options", [])
+            return ChooseAction(random.randrange(len(options)) if options else 0)
 
         elif screen in ("GRID", "HAND_SELECT"):
-            screen_obj = getattr(game, "screen", None)
-            if screen_obj and getattr(screen_obj, "confirm_up", False):
+            if s and getattr(s, "confirm_up", False):
                 return ProceedAction()
-            return ChooseAction(0)
+            cards = getattr(s, "cards", [])
+            return ChooseAction(random.randrange(len(cards)) if cards else 0)
 
         elif screen == "BOSS_REWARD":
-            return ChooseAction(0)  # первая реликвия
+            relics = getattr(s, "relics", [])
+            return ChooseAction(random.randrange(len(relics)) if relics else 0)
 
-        elif screen == "GAME_OVER":
+        elif screen in ("GAME_OVER", "COMPLETE"):
             return ProceedAction()
 
         else:
-            logging.getLogger("MetaAgent").warning("Неизвестный экран: %s", screen)
+            logging.getLogger("MetaAgent").warning("Неизвестный экран: '%s' — ProceedAction", screen)
             return ProceedAction()
 
     # ── Вспомогательные ───────────────────────────────────────────────

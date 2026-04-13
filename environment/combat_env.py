@@ -56,6 +56,7 @@ class CombatEnv(gym.Env):
 
         self._prev_game = None
         self._done = False
+        self._error_count = 0
 
     # ── Gymnasium interface ────────────────────────────────────────────
 
@@ -138,7 +139,12 @@ class CombatEnv(gym.Env):
             self._state_q.put(("error", str(e), None))
 
     def _handle_error(self, error):
-        log.warning("Ошибка от игры: %s", error)
+        self._error_count += 1
+        log.warning("Ошибка от игры (#%d): %s", self._error_count, error)
+        # После 3 подряд ошибок пробуем ProceedAction чтобы выйти из застрявшего экрана
+        if self._error_count >= 3:
+            self._error_count = 0
+            return ProceedAction()
         return StateAction()
 
     def _handle_out_of_game(self):
@@ -181,6 +187,7 @@ class CombatEnv(gym.Env):
 
         # ── Не бой — навигируем автоматически ────────────────────────
         if screen != "NONE":
+            self._error_count = 0
             action = _auto_navigate(screen, game)
             log.debug("Навигация: %-20s → %s", screen, type(action).__name__)
             return action
@@ -236,7 +243,9 @@ def _drain(q: queue.Queue):
 def _auto_navigate(screen: str, game):
     """Случайная навигация для небоевых экранов (во время обучения PPO).
 
-    Рандомизация нужна чтобы CombatAgent видел разные карты, врагов и ситуации.
+    Покрывает все ScreenType из spirecomm:
+      EVENT, CHEST, SHOP_ROOM, REST, CARD_REWARD, COMBAT_REWARD,
+      MAP, BOSS_REWARD, SHOP_SCREEN, GRID, HAND_SELECT, GAME_OVER, COMPLETE
     """
     s = getattr(game, "screen", None)
 
@@ -259,7 +268,9 @@ def _auto_navigate(screen: str, game):
         if s and getattr(s, "confirm_up", False):
             return ProceedAction()
         cards = getattr(s, "cards", [])
-        return ChooseAction(random.randrange(len(cards)) if cards else 0)
+        if not cards:
+            return ProceedAction()
+        return ChooseAction(random.randrange(len(cards)))
 
     elif screen == "BOSS_REWARD":
         relics = getattr(s, "relics", [])
@@ -275,14 +286,12 @@ def _auto_navigate(screen: str, game):
         options = getattr(s, "options", [])
         return ChooseAction(random.randrange(len(options)) if options else 0)
 
-    elif screen == "COMBAT_REWARD":
+    elif screen in ("SHOP_SCREEN", "SHOP_ROOM"):
         return ProceedAction()
 
-    elif screen == "GAME_OVER":
-        return ProceedAction()
-
-    elif screen in ("SHOP_SCREEN", "SHOP"):
+    elif screen in ("COMBAT_REWARD", "GAME_OVER", "COMPLETE"):
         return ProceedAction()
 
     else:
+        log.warning("Неизвестный экран: '%s' — ProceedAction", screen)
         return ProceedAction()
