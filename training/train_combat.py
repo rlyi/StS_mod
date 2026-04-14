@@ -47,6 +47,17 @@ LOG_DIR  = os.path.join(_ROOT, "logs", "combat")
 SAVE_DIR = MODELS_DIR
 
 
+def _latest_checkpoint(save_dir: str):
+    """Вернуть путь к последнему чекпоинту или None."""
+    import glob
+    files = glob.glob(os.path.join(save_dir, "combat_ppo_*_steps.zip"))
+    if not files:
+        return None
+    # Сортируем по номеру шага в имени файла
+    files.sort(key=lambda p: int(os.path.basename(p).split("_")[2]))
+    return files[-1]
+
+
 def main():
     os.makedirs(LOG_DIR,  exist_ok=True)
     os.makedirs(SAVE_DIR, exist_ok=True)
@@ -61,22 +72,34 @@ def main():
         name_prefix="combat_ppo",
     )
 
-    model = PPO(
-        policy="MlpPolicy",
-        env=env,
-        verbose=0,          # не пишем в stdout
-        seed=SEED,
-        device="cpu",       # MlpPolicy эффективнее на CPU
-        tensorboard_log=LOG_DIR,
-        n_steps=128,
-        batch_size=32,
-        n_epochs=10,
-        learning_rate=3e-4,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.01,
-    )
+    # Загружаем чекпоинт если есть, иначе создаём новую модель
+    checkpoint = _latest_checkpoint(SAVE_DIR)
+    if checkpoint:
+        log.info("Дообучение с чекпоинта: %s", checkpoint)
+        model = PPO.load(
+            checkpoint,
+            env=env,
+            device="cpu",
+            tensorboard_log=LOG_DIR,
+        )
+    else:
+        log.info("Чекпоинт не найден — начинаем с нуля")
+        model = PPO(
+            policy="MlpPolicy",
+            env=env,
+            verbose=0,
+            seed=SEED,
+            device="cpu",
+            tensorboard_log=LOG_DIR,
+            n_steps=128,
+            batch_size=32,
+            n_epochs=10,
+            learning_rate=3e-4,
+            gamma=0.99,
+            gae_lambda=0.95,
+            clip_range=0.2,
+            ent_coef=0.01,
+        )
 
     log.info("Начало обучения: %d шагов", TOTAL_TIMESTEPS)
     log.info("TensorBoard: tensorboard --logdir %s", LOG_DIR)
