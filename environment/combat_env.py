@@ -174,7 +174,9 @@ class CombatEnv(gym.Env):
             # Подбираем все незолотые награды: карты, зелья, реликвии
             for i, reward in enumerate(rewards):
                 rt = str(getattr(reward, "reward_type", "")).upper().split(".")[-1]
-                if rt in ("CARD", "GOLD", "RELIC", "RELIC_AND_GOLD",
+                if rt == "POTION" and game.are_potions_full():
+                    continue  # нет места — пропускаем зелье
+                if rt in ("CARD", "POTION", "GOLD", "RELIC", "RELIC_AND_GOLD",
                           "EMERALD_KEY", "SAPPHIRE_KEY", "STOLEN_GOLD"):
                     log.debug("COMBAT_REWARD: выбираем награду #%d (%s)", i, rt)
                     return ChooseAction(i)
