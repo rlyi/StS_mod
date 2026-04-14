@@ -107,7 +107,8 @@ def main():
     model.learn(
         total_timesteps=TOTAL_TIMESTEPS,
         callback=checkpoint_cb,
-        progress_bar=False,  # прогресс-бар пишет в stdout
+        progress_bar=False,       # прогресс-бар пишет в stdout
+        reset_num_timesteps=checkpoint is None,  # продолжаем счётчик при дообучении
     )
 
     final_path = os.path.join(SAVE_DIR, "combat_ppo")
