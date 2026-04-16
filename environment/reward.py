@@ -1,6 +1,7 @@
 from config import (
     REWARD_WIN, REWARD_KILL_ENEMY, REWARD_DAMAGE_MULT,
     REWARD_LOSE, REWARD_DAMAGE_TAKEN_MULT, REWARD_TURN_PENALTY,
+    REWARD_ACT1_BOSS, ACT1_BOSSES,
 )
 
 
@@ -48,6 +49,8 @@ def calculate_reward(prev_game, curr_game) -> float:
     curr_all_dead = all(m.current_hp <= 0 for m in curr_game.monsters)
     if prev_live and curr_all_dead:
         reward += REWARD_WIN
+        if any(m.name in ACT1_BOSSES for m in prev_game.monsters):
+            reward += REWARD_ACT1_BOSS
 
     return reward
 

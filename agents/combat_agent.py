@@ -4,8 +4,8 @@ import numpy as np
 from spirecomm.communication.action import PlayCardAction, EndTurnAction, PotionAction
 
 from config import (
-    CARD_TO_IDX, INTENT_TO_IDX, OBS_SIZE, ACTION_SIZE, POTION_SLOTS,
-    MODELS_DIR, CARD_IDX_UNKNOWN, INTENT_MAX_IDX, CARD_PROPERTIES,
+    INTENT_TO_IDX, OBS_SIZE, ACTION_SIZE, POTION_SLOTS,
+    MODELS_DIR, INTENT_MAX_IDX, CARD_PROPERTIES,
 )
 
 
