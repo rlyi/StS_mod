@@ -155,12 +155,20 @@ class CombatAgent:
         self._try_load_model()
 
     def _try_load_model(self):
+        import glob
         import logging
         _log = logging.getLogger("CombatAgent")
         try:
             from stable_baselines3 import PPO
+            # Сначала ищем фиксированное имя, потом последний чекпоинт по шагам
             model_path = os.path.join(MODELS_DIR, "combat_ppo.zip")
-            if os.path.exists(model_path):
+            if not os.path.exists(model_path):
+                checkpoints = sorted(
+                    glob.glob(os.path.join(MODELS_DIR, "combat_ppo_*_steps.zip")),
+                    key=lambda p: int(p.split("_")[-2]),
+                )
+                model_path = checkpoints[-1] if checkpoints else None
+            if model_path and os.path.exists(model_path):
                 self.model = PPO.load(model_path)
                 _log.info("Модель загружена из %s", model_path)
             else:

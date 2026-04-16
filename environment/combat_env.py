@@ -34,6 +34,20 @@ from config import OBS_SIZE, ACTION_SIZE
 from agents.combat_agent import game_to_obs, action_to_spirecomm, get_valid_actions
 from environment.reward import calculate_reward
 
+
+def _make_meta_agent():
+    """Загружает мета-агента согласно META_AGENT в config.py."""
+    import importlib
+    from config import META_AGENT
+    _AGENTS = {
+        "random": ("agents.meta_agent",      "RandomMetaAgent"),
+        "tree":   ("agents.meta_tree_agent", "DecisionTreeMetaAgent"),
+    }
+    module_name, class_name = _AGENTS.get(META_AGENT, _AGENTS["random"])
+    cls = getattr(importlib.import_module(module_name), class_name)
+    log.info("Мета-агент: %s (%s)", class_name, META_AGENT)
+    return cls()
+
 log = logging.getLogger("CombatEnv")
 
 
@@ -57,6 +71,7 @@ class CombatEnv(gym.Env):
         self._prev_game = None
         self._done = False
         self._error_count = 0
+        self._meta_agent = _make_meta_agent()
 
     # ── Gymnasium interface ────────────────────────────────────────────
 
@@ -162,7 +177,7 @@ class CombatEnv(gym.Env):
             victory = getattr(getattr(game, "screen", None), "victory", False)
             outcome = "win" if victory else "lose"
             floor = getattr(game, "floor", "?")
-            hp = f"{player.current_hp}/{player.max_hp}" if player else "?/?"
+            hp = f"{game.current_hp}/{game.max_hp}" if game.max_hp else "?/?"
             log.info("РАН ЗАВЕРШЁН | исход=%-4s этаж=%-2s HP=%s", outcome, floor, hp)
             self._state_q.put(("terminal", outcome, game))
             return ProceedAction()
@@ -182,15 +197,15 @@ class CombatEnv(gym.Env):
                     return ChooseAction(i)
             # Все награды обработаны — завершаем эпизод
             floor = getattr(game, "floor", "?")
-            hp = f"{player.current_hp}/{player.max_hp}" if player else "?/?"
+            hp = f"{game.current_hp}/{game.max_hp}" if game.max_hp else "?/?"
             log.info("РАН ЗАВЕРШЁН | исход=win  этаж=%-2s HP=%s", floor, hp)
             self._state_q.put(("terminal", "win", game))
             return ProceedAction()
 
-        # ── Не бой — навигируем автоматически ────────────────────────
+        # ── Не бой — передаём мета-агенту ───────────────────────────
         if screen != "NONE":
             self._error_count = 0
-            action = _auto_navigate(screen, game)
+            action = self._meta_agent.act(game)
             log.debug("Навигация: %-20s → %s", screen, type(action).__name__)
             return action
 

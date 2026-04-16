@@ -34,6 +34,21 @@ sys.stderr = open(os.path.join(_LOG_DIR, "ai_errors.log"), "a", encoding="utf-8"
 
 sys.path.insert(0, _ROOT)
 
+
+def _load_meta_agent():
+    """Загружает мета-агента согласно META_AGENT в config.py."""
+    from config import META_AGENT
+    _AGENTS = {
+        "random": ("agents.meta_agent",      "RandomMetaAgent"),
+        "tree":   ("agents.meta_tree_agent", "DecisionTreeMetaAgent"),
+    }
+    module_name, class_name = _AGENTS.get(META_AGENT, _AGENTS["random"])
+    import importlib
+    cls = getattr(importlib.import_module(module_name), class_name)
+    log.info("Мета-агент: %s (%s)", class_name, META_AGENT)
+    return cls()
+
+
 # spirecomm импортируется быстро — можно сразу
 from spirecomm.communication.coordinator import Coordinator
 from spirecomm.communication.action import StateAction, ProceedAction
@@ -63,11 +78,10 @@ class SlayTheSpireAI:
         log.info("signal_ready отправлен — загружаем агентов...")
 
         # ── Шаг 2: загружаем тяжёлые агенты ───────────────────────────
+        # Мета-агент выбирается через META_AGENT в config.py.
         from agents.combat_agent import CombatAgent
-        from agents.meta_agent import MetaAgent
-
         self._combat_agent = CombatAgent()
-        self._meta_agent   = MetaAgent()
+        self._meta_agent   = _load_meta_agent()
         self._agents_ready = True
 
         # ── Шаг 3: переключаем callback на боевой ─────────────────────

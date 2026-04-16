@@ -6,6 +6,10 @@ CHARACTER = "IRONCLAD"
 MAX_ACT = 1
 MAX_FLOOR = 17  # Act 1: floors 1-17
 
+# ── Meta agent selection ───────────────────────────────────────────────
+# Варианты: "random" | "tree" | "forest" | "imitation" | "llm"
+META_AGENT = "tree"
+
 # ── Paths ──────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR   = os.path.join(PROJECT_ROOT, "models")
