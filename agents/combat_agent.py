@@ -1,10 +1,10 @@
 import os
 import logging
 import numpy as np
-from spirecomm.communication.action import PlayCardAction, EndTurnAction
+from spirecomm.communication.action import PlayCardAction, EndTurnAction, PotionAction
 
 from config import (
-    CARD_TO_IDX, INTENT_TO_IDX, OBS_SIZE, ACTION_SIZE,
+    CARD_TO_IDX, INTENT_TO_IDX, OBS_SIZE, ACTION_SIZE, POTION_SLOTS,
     MODELS_DIR, CARD_IDX_UNKNOWN, INTENT_MAX_IDX, CARD_PROPERTIES,
 )
 
@@ -76,6 +76,14 @@ def game_to_obs(game) -> np.ndarray:
         obs[base + 2] = min(monster.block / 100.0, 1.0)
         obs[base + 3] = min(_monster_damage(monster) / 30.0, 1.0)
 
+    # Зелья (2 слота): [present, type_norm] × 2
+    potions = getattr(game, "potions", [])
+    for i in range(POTION_SLOTS):
+        base = 61 + i * 2
+        if i < len(potions) and potions[i].potion_id != "Potion Slot":
+            obs[base]     = 1.0
+            obs[base + 1] = _potion_type_norm(potions[i].potion_id)
+
     return obs
 
 
@@ -97,14 +105,28 @@ def get_valid_actions(game) -> list:
                 has_target = True
 
         if has_target:
-            # Нужна цель — разрешаем только действия с врагом
             for enemy_group in range(1, min(len(live) + 1, 5)):
                 mask[card_idx + enemy_group * 5] = True
         else:
-            # Цель не нужна
             mask[card_idx] = True
 
     mask[25] = True  # Завершить ход — всегда можно
+
+    # Зелья: действия 26-35 (слот 0: 26-30, слот 1: 31-35)
+    potions = getattr(game, "potions", [])
+    for slot in range(POTION_SLOTS):
+        if slot >= len(potions):
+            break
+        p = potions[slot]
+        if p.potion_id == "Potion Slot" or not getattr(p, "can_use", False):
+            continue
+        base = 26 + slot * 5
+        if getattr(p, "requires_target", False):
+            for ei in range(min(len(live), 4)):
+                mask[base + 1 + ei] = True
+        else:
+            mask[base] = True
+
     return mask
 
 
@@ -118,21 +140,30 @@ def action_to_spirecomm(action: int, game):
       15-19: карта 0-4 на врага 2
       20-24: карта 0-4 на врага 3
       25:    завершить ход
+      26-30: зелье слот 0 (26=без цели, 27-30=враг 0-3)
+      31-35: зелье слот 1 (31=без цели, 32-35=враг 0-3)
     """
     if action == 25:
         return EndTurnAction()
 
+    live = [m for m in game.monsters if m.current_hp > 0]
+
+    # Зелья
+    if 26 <= action <= 35:
+        slot          = (action - 26) // 5
+        target_offset = (action - 26) % 5   # 0=без цели, 1-4=враг 0-3
+        if target_offset == 0:
+            return PotionAction(use=True, potion_index=slot)
+        enemy_idx = target_offset - 1
+        t_idx = live[enemy_idx].monster_index if enemy_idx < len(live) else live[0].monster_index if live else None
+        return PotionAction(use=True, potion_index=slot, target_index=t_idx)
+
+    # Карты
     card_idx     = action % 5
-    target_group = action // 5  # 0=без цели, 1=враг 0, 2=враг 1, 3=враг 2, 4=враг 3
+    target_group = action // 5
 
     if card_idx >= len(game.hand):
         return EndTurnAction()
-
-    card = game.hand[card_idx]
-    live = [m for m in game.monsters if m.current_hp > 0]
-
-    _alog = logging.getLogger("ActionDebug")
-    card_id = getattr(card, "card_id", str(card))
 
     if target_group == 0:
         return PlayCardAction(card_index=card_idx)
@@ -222,6 +253,17 @@ def _get_power(entity, power_id: str) -> float:
         if getattr(power, "power_id", "") == power_id:
             return float(getattr(power, "amount", 0))
     return 0.0
+
+
+_HEALING_POTIONS  = {"HealthPotion", "FruitJuice", "BloodPotion", "LiquidMemories"}
+_OFFENSIVE_POTIONS = {"FirePotion", "ExplosivePotion", "PoisonPotion",
+                      "ThrowingKnivesPotion", "FearPotion", "WeakPotion", "SmokeBomb"}
+
+def _potion_type_norm(potion_id: str) -> float:
+    """Кодирует тип зелья в [0,1]: 0.33=лечение, 0.67=атака, 1.0=баф/другое."""
+    if potion_id in _HEALING_POTIONS:   return 0.33
+    if potion_id in _OFFENSIVE_POTIONS: return 0.67
+    return 1.0
 
 
 def _monster_damage(monster) -> float:

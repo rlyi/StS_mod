@@ -17,9 +17,10 @@ DATA_RUNS_DIR = os.path.join(PROJECT_ROOT, "data", "runs")
 STS_RUNS_DIR  = r"C:\Users\User\Documents\My Games\SlayTheSpire\runs"
 
 # ── Observation / action space ─────────────────────────────────────────
-# 10 (player) + 5*7 (hand: type×4 + dmg + block + cost) + 4*4 (enemies) = 61
-OBS_SIZE    = 61
-ACTION_SIZE = 26  # 5 cards × (no target + 4 enemies) + end turn (action 25)
+# 10 (player) + 5*7 (hand: type×4 + dmg + block + cost) + 4*4 (enemies) + 2*2 (potions) = 65
+OBS_SIZE    = 65
+ACTION_SIZE = 36  # 5 cards × (no target + 4 enemies) + end turn (25) + 2 potions × 5 = 36
+POTION_SLOTS = 2  # слотов зелий в наблюдении
 
 # ── Свойства карт: (базовый_урон, базовый_блок) ────────────────────────
 # Урон и блок — базовые значения без учёта силы/ловкости
