@@ -17,13 +17,13 @@ DATA_RUNS_DIR = os.path.join(PROJECT_ROOT, "data", "runs")
 STS_RUNS_DIR  = r"C:\Users\User\Documents\My Games\SlayTheSpire\runs"
 
 # ── Observation / action space ─────────────────────────────────────────
-# 13 (player) + 7*7 (hand) + 4*5 (enemies) + 2*4 (potions) = 90
-# Player [0-12]: hp, energy, block, strength, dexterity, vulnerable, weak, poison,
-#                metallicize, corruption, barricade, deck_size, discard_size
-# Hand   [13-61]: до 7 карт × 7: is_attack, is_skill, is_power, is_other, dmg/20, blk/20, cost/3
-# Enemies[62-81]: до 4 врагов × 5: hp_norm, intent_norm, block_norm, damage_norm, ritual_norm
-# Potions[82-89]: 2 слота × 4: present, is_heal, is_attack, is_utility
-OBS_SIZE    = 90
+# 14 (player) + 7*8 (hand) + 4*5 (enemies) + 2*4 (potions) = 98
+# Player [0-13]:  hp, energy, block, strength, dexterity, vulnerable, weak, poison,
+#                 metallicize, corruption, barricade, draw_pile, discard_size, turn
+# Hand   [14-69]: до 7 карт × 8: is_attack, is_skill, is_power, is_other, dmg/20, blk/20, cost/3, is_upgraded
+# Enemies[70-89]: до 4 врагов × 5: hp_norm, intent_norm, block_norm, damage_norm, ritual_norm
+# Potions[90-97]: 2 слота × 4: present, is_heal, is_attack, is_utility
+OBS_SIZE    = 98
 ACTION_SIZE = 46  # 7 cards × (no target + 4 enemies)=35 + end turn(35) + 2 potions × 5=10
 POTION_SLOTS = 2  # слотов зелий в наблюдении
 

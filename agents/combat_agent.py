@@ -29,14 +29,15 @@ _PLAYER_POWERS = [
 # ── Вспомогательные функции (используются также в CombatEnv) ──────────
 
 def game_to_obs(game) -> np.ndarray:
-    """Преобразует состояние игры в вектор наблюдений (90 float32).
+    """Преобразует состояние игры в вектор наблюдений (98 float32).
 
     Структура:
-      [0-12]  игрок: hp, energy, block, strength, dexterity, vulnerable, weak,
-                     poison, metallicize, corruption, barricade, deck_size, discard_size
-      [13-61] рука (до 7 карт × 7): is_attack, is_skill, is_power, is_other, dmg/20, blk/20, cost/3
-      [62-81] враги (до 4 × 5): hp_norm, intent_norm, block_norm, damage_norm, ritual_norm
-      [82-89] зелья (2 слота × 4): present, is_heal, is_attack, is_utility
+      [0-13]  игрок: hp, energy, block, strength, dexterity, vulnerable, weak,
+                     poison, metallicize, corruption, barricade, draw_pile, discard_size, turn
+      [14-69] рука (до 7 карт × 8): is_attack, is_skill, is_power, is_other,
+                                     dmg/20, blk/20, cost/3, is_upgraded
+      [70-89] враги (до 4 × 5): hp_norm, intent_norm, block_norm, damage_norm, ritual_norm
+      [90-97] зелья (2 слота × 4): present, is_heal, is_attack, is_utility
     """
     obs = np.zeros(OBS_SIZE, dtype=np.float32)
 
@@ -60,17 +61,20 @@ def game_to_obs(game) -> np.ndarray:
     obs[9]  = 1.0 if _get_power(player, "Corruption") > 0 else 0.0
     obs[10] = 1.0 if _get_power(player, "Barricade")  > 0 else 0.0
 
-    # Игрок — колода
-    obs[11] = min(len(getattr(game, "deck",         [])) / 30.0, 1.0)
+    # Игрок — колода и ход
+    obs[11] = min(len(getattr(game, "draw_pile",    [])) / 30.0, 1.0)  # draw pile, не мастер-колода
     obs[12] = min(len(getattr(game, "discard_pile", [])) / 30.0, 1.0)
+    obs[13] = min(getattr(game, "turn", 1) / 20.0, 1.0)
 
-    # Карты в руке (до 7) — 7 значений на карту
+    # Карты в руке (до 7) — 8 значений на карту
     for i, card in enumerate(game.hand[:7]):
-        card_id  = card.card_id if hasattr(card, "card_id") else str(card)
-        cost     = card.cost if (hasattr(card, "cost") and card.cost >= 0) else 0
-        dmg, blk = CARD_PROPERTIES.get(card_id, (0, 0))
-        type_str = _card_type_str(card)
-        base     = 13 + i * 7
+        card_id     = card.card_id if hasattr(card, "card_id") else str(card)
+        base_id     = card_id.split("+")[0].strip()
+        is_upgraded = 1.0 if "+" in card_id else 0.0
+        cost        = card.cost if (hasattr(card, "cost") and card.cost >= 0) else 0
+        dmg, blk    = CARD_PROPERTIES.get(base_id, (0, 0))
+        type_str    = _card_type_str(card)
+        base        = 14 + i * 8
         obs[base]     = 1.0 if type_str == "ATTACK" else 0.0
         obs[base + 1] = 1.0 if type_str == "SKILL"  else 0.0
         obs[base + 2] = 1.0 if type_str == "POWER"  else 0.0
@@ -78,11 +82,12 @@ def game_to_obs(game) -> np.ndarray:
         obs[base + 4] = min(dmg  / 20.0, 1.0)
         obs[base + 5] = min(blk  / 20.0, 1.0)
         obs[base + 6] = min(cost / 3.0,  1.0)
+        obs[base + 7] = is_upgraded
 
     # Живые враги (до 4) — 5 значений на врага
     live = [m for m in game.monsters if m.current_hp > 0]
     for i, monster in enumerate(live[:4]):
-        base = 62 + i * 5
+        base = 70 + i * 5
         obs[base]     = monster.current_hp / max(monster.max_hp, 1)
         intent_str    = _intent_str(monster.intent)
         obs[base + 1] = INTENT_TO_IDX.get(intent_str, INTENT_MAX_IDX) / INTENT_MAX_IDX
@@ -93,7 +98,7 @@ def game_to_obs(game) -> np.ndarray:
     # Зелья (2 слота): [present, is_heal, is_attack, is_utility] × 2
     potions = getattr(game, "potions", [])
     for i in range(POTION_SLOTS):
-        base = 82 + i * 4
+        base = 90 + i * 4
         if i < len(potions) and potions[i].potion_id != "Potion Slot":
             pid = potions[i].potion_id
             obs[base]     = 1.0
