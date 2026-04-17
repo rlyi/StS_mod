@@ -188,7 +188,15 @@ class CombatEnv(gym.Env):
             # отклонён и сессия зависнет.
             for i, reward in enumerate(rewards):
                 rt = str(getattr(reward, "reward_type", "")).upper().split(".")[-1]
-                if rt in ("CARD", "POTION", "GOLD", "RELIC", "RELIC_AND_GOLD",
+                if rt == "POTION":
+                    potions = getattr(game, "potions", [])
+                    if any(getattr(p, "potion_id", "Potion Slot") == "Potion Slot"
+                           for p in potions):
+                        log.debug("COMBAT_REWARD: берём зелье #%d", i)
+                        return ChooseAction(i)
+                    log.debug("COMBAT_REWARD: слоты зелий полны — пропускаем зелье")
+                    continue
+                if rt in ("CARD", "GOLD", "RELIC", "RELIC_AND_GOLD",
                           "EMERALD_KEY", "SAPPHIRE_KEY", "STOLEN_GOLD"):
                     log.debug("COMBAT_REWARD: выбираем награду #%d (%s)", i, rt)
                     return ChooseAction(i)
