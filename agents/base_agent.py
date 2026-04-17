@@ -116,19 +116,23 @@ class BaseMetaAgent(ABC):
             if not options:
                 return ProceedAction()
             # Фильтруем заблокированные опции — spirecomm их считает, игра нет
+            # Игра нумерует только доступные опции, поэтому нужен маппинг индексов
             available = [i for i, o in enumerate(options)
-                         if not getattr(o, "locked", False)]
+                         if not getattr(o, "locked", False)
+                         and "[locked]" not in getattr(o, "text", str(o)).lower()]
             if not available:
                 return ProceedAction()
             opt_names = [getattr(o, "text", str(o))[:40] for o in options]
             idx = self.choose_event(game)
             idx = max(0, min(idx, len(options) - 1))
-            # Если выбрали заблокированную — берём ближайшую доступную
+            # Если выбрали заблокированную — берём последнюю доступную (обычно Leave)
             if idx not in available:
-                idx = available[-1]  # последняя (обычно Leave)
+                idx = available[-1]
+            # Игра считает только незаблокированные опции — маппим в их позицию
+            game_idx = available.index(idx)
             log.info("[EVENT  ] этаж=%-2s HP=%-7s варианты=%s → #%d '%s'",
-                     floor, hp_str, opt_names, idx, opt_names[idx])
-            return ChooseAction(idx)
+                     floor, hp_str, opt_names, game_idx, opt_names[idx])
+            return ChooseAction(game_idx)
 
         elif screen == "BOSS_REWARD":
             relics = getattr(s, "relics", [])
