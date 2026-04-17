@@ -95,7 +95,7 @@ def game_to_obs(game) -> np.ndarray:
         obs[base + 3] = min(_monster_damage(monster) / 30.0, 1.0)
         obs[base + 4] = min(_get_power(monster, "Ritual") / 10.0, 1.0)
 
-    # Зелья (2 слота): [present, is_heal, is_attack, is_utility] × 2
+    # Зелья (3 слота): [present, is_heal, is_attack, is_utility] × 3
     potions = getattr(game, "potions", [])
     for i in range(POTION_SLOTS):
         base = 90 + i * 4
@@ -121,6 +121,7 @@ def get_valid_actions(game) -> list:
       35:    завершить ход
       36-40: зелье слот 0 (36=без цели, 37-40=враг 0-3)
       41-45: зелье слот 1 (41=без цели, 42-45=враг 0-3)
+      46-50: зелье слот 2 (46=без цели, 47-50=враг 0-3)
     """
     mask = [False] * ACTION_SIZE
     live = [m for m in game.monsters if m.current_hp > 0]
@@ -174,6 +175,7 @@ def action_to_spirecomm(action: int, game):
       35:    завершить ход
       36-40: зелье слот 0 (36=без цели, 37-40=враг 0-3)
       41-45: зелье слот 1 (41=без цели, 42-45=враг 0-3)
+      46-50: зелье слот 2 (46=без цели, 47-50=враг 0-3)
     """
     if action == 35:
         return EndTurnAction()
@@ -181,7 +183,7 @@ def action_to_spirecomm(action: int, game):
     live = [m for m in game.monsters if m.current_hp > 0]
 
     # Зелья
-    if 36 <= action <= 45:
+    if 36 <= action <= 50:
         slot          = (action - 36) // 5
         target_offset = (action - 36) % 5  # 0=без цели, 1-4=враг 0-3
         if target_offset == 0:
