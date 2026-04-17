@@ -18,7 +18,7 @@ def calculate_reward(prev_game, curr_game) -> float:
     """
     reward = REWARD_TURN_PENALTY
 
-    if prev_game is None:
+    if prev_game is None or curr_game.player is None or prev_game.player is None:
         return reward
 
     # ── Урон по игроку ────────────────────────────────────────────────

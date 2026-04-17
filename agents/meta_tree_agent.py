@@ -267,9 +267,10 @@ class DecisionTreeMetaAgent(BaseMetaAgent):
         if self.path_model is not None:
             try:
                 preferred = node_type_map.get(int(self.path_model.predict(feats)[0]), "M")
-                for i, node in enumerate(nodes):
-                    if str(getattr(node, "symbol", "")).upper() == preferred:
-                        return i
+                matching = [i for i, node in enumerate(nodes)
+                            if str(getattr(node, "symbol", "")).upper() == preferred]
+                if matching:
+                    return random.choice(matching)
             except Exception:
                 pass
 

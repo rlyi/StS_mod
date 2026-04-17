@@ -156,10 +156,6 @@ class CombatEnv(gym.Env):
     def _handle_error(self, error):
         self._error_count += 1
         log.warning("Ошибка от игры (#%d): %s", self._error_count, error)
-        # После 3 подряд ошибок пробуем ProceedAction чтобы выйти из застрявшего экрана
-        if self._error_count >= 3:
-            self._error_count = 0
-            return ProceedAction()
         return StateAction()
 
     def _handle_out_of_game(self):
@@ -186,11 +182,11 @@ class CombatEnv(gym.Env):
         if screen == "COMBAT_REWARD":
             screen_obj = getattr(game, "screen", None)
             rewards = getattr(screen_obj, "rewards", [])
-            # Подбираем все незолотые награды: карты, зелья, реликвии
+            # Подбираем все награды: карты, зелья (даже если слоты полны — игра покажет экран
+            # выбора замены), золото, реликвии. Не пропускаем зелья — иначе proceed будет
+            # отклонён и сессия зависнет.
             for i, reward in enumerate(rewards):
                 rt = str(getattr(reward, "reward_type", "")).upper().split(".")[-1]
-                if rt == "POTION" and game.are_potions_full():
-                    continue  # нет места — пропускаем зелье
                 if rt in ("CARD", "POTION", "GOLD", "RELIC", "RELIC_AND_GOLD",
                           "EMERALD_KEY", "SAPPHIRE_KEY", "STOLEN_GOLD"):
                     log.debug("COMBAT_REWARD: выбираем награду #%d (%s)", i, rt)
@@ -213,6 +209,21 @@ class CombatEnv(gym.Env):
         if player is None:
             return StateAction()
 
+        # Игрок мёртв — ждём GAME_OVER, не кладём в очередь (иначе двойной штраф)
+        if player.current_hp <= 0:
+            return StateAction()
+
+        # Все монстры мертвы — бой завершается, ждём COMBAT_REWARD
+        if not any(m.current_hp > 0 for m in game.monsters):
+            return StateAction()
+
+        # Если предыдущие команды отклонялись (игра между ходами), не нагружаем PPO —
+        # просто завершаем ход, это первое действие которое разблокируется.
+        if self._error_count >= 2:
+            log.debug("Повторные ошибки (%d) в бою — EndTurn для разблокировки", self._error_count)
+            self._error_count = 0
+            return EndTurnAction()
+
         # ── В бою: ждём действие от основного потока ─────────────────
         self._state_q.put(("state", game))
         try:
@@ -224,8 +235,9 @@ class CombatEnv(gym.Env):
         mask = get_valid_actions(game)
         if not mask[action_int]:
             valid = [i for i, v in enumerate(mask) if v]
-            action_int = valid[0] if valid else 15
+            action_int = valid[0] if valid else 25  # EndTurn по умолчанию
 
+        self._error_count = 0
         return action_to_spirecomm(action_int, game)
 
     def _wait_for_combat_state(self, timeout: int = 300):
