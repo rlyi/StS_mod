@@ -8,17 +8,35 @@ from config import (
     MODELS_DIR, INTENT_MAX_IDX, CARD_PROPERTIES,
 )
 
+# ── Зелья ─────────────────────────────────────────────────────────────
+_HEAL_POTIONS = {
+    "HealthPotion", "FruitJuice", "BloodPotion", "LiquidMemories",
+}
+_ATTACK_POTIONS = {
+    "FirePotion", "ExplosivePotion", "PoisonPotion", "ThrowingKnivesPotion",
+    "FearPotion", "WeakPotion", "SmokeBomb",
+}
+# Всё остальное — utility (баф, энергия, карты и т.д.)
+
+# ── Пауэры ────────────────────────────────────────────────────────────
+# Пауэры игрока которые влияют на тактику
+_PLAYER_POWERS = [
+    "Strength", "Dexterity", "Vulnerable", "Weakened", "Poison",
+    "Metallicize", "Corruption", "Barricade",
+]
+
 
 # ── Вспомогательные функции (используются также в CombatEnv) ──────────
 
 def game_to_obs(game) -> np.ndarray:
-    """Преобразует состояние игры в вектор наблюдений (65 float32).
+    """Преобразует состояние игры в вектор наблюдений (90 float32).
 
     Структура:
-      [0-9]   игрок: hp, energy, block, strength, dexterity, vulnerable, weak, poison, deck, discard
-      [10-44] рука (до 5 карт × 7): is_attack, is_skill, is_power, is_other, dmg/20, blk/20, cost/3
-      [45-60] враги (до 4 × 4): hp_norm, intent_norm, block_norm, damage_norm
-      [61-64] зелья (2 слота × 2): present, type_norm
+      [0-12]  игрок: hp, energy, block, strength, dexterity, vulnerable, weak,
+                     poison, metallicize, corruption, barricade, deck_size, discard_size
+      [13-61] рука (до 7 карт × 7): is_attack, is_skill, is_power, is_other, dmg/20, blk/20, cost/3
+      [62-81] враги (до 4 × 5): hp_norm, intent_norm, block_norm, damage_norm, ritual_norm
+      [82-89] зелья (2 слота × 4): present, is_heal, is_attack, is_utility
     """
     obs = np.zeros(OBS_SIZE, dtype=np.float32)
 
@@ -33,23 +51,26 @@ def game_to_obs(game) -> np.ndarray:
     obs[2] = min(player.block / 100.0, 1.0)
 
     # Игрок — эффекты
-    obs[3] = np.clip(_get_power(player, "Strength")  / 10.0, -1.0, 1.0)
-    obs[4] = np.clip(_get_power(player, "Dexterity") / 10.0, -1.0, 1.0)
-    obs[5] = min(_get_power(player, "Vulnerable") / 5.0, 1.0)
-    obs[6] = min(_get_power(player, "Weakened")   / 5.0, 1.0)
-    obs[7] = min(_get_power(player, "Poison")     / 20.0, 1.0)
+    obs[3] = np.clip(_get_power(player, "Strength")    / 10.0, -1.0, 1.0)
+    obs[4] = np.clip(_get_power(player, "Dexterity")   / 10.0, -1.0, 1.0)
+    obs[5] = min(_get_power(player, "Vulnerable")  / 5.0,  1.0)
+    obs[6] = min(_get_power(player, "Weakened")    / 5.0,  1.0)
+    obs[7] = min(_get_power(player, "Poison")      / 20.0, 1.0)
+    obs[8] = min(_get_power(player, "Metallicize") / 10.0, 1.0)
+    obs[9]  = 1.0 if _get_power(player, "Corruption") > 0 else 0.0
+    obs[10] = 1.0 if _get_power(player, "Barricade")  > 0 else 0.0
 
     # Игрок — колода
-    obs[8] = min(len(getattr(game, "deck",         [])) / 30.0, 1.0)
-    obs[9] = min(len(getattr(game, "discard_pile", [])) / 30.0, 1.0)
+    obs[11] = min(len(getattr(game, "deck",         [])) / 30.0, 1.0)
+    obs[12] = min(len(getattr(game, "discard_pile", [])) / 30.0, 1.0)
 
-    # Карты в руке (до 5) — 7 значений на карту
-    for i, card in enumerate(game.hand[:5]):
+    # Карты в руке (до 7) — 7 значений на карту
+    for i, card in enumerate(game.hand[:7]):
         card_id  = card.card_id if hasattr(card, "card_id") else str(card)
         cost     = card.cost if (hasattr(card, "cost") and card.cost >= 0) else 0
         dmg, blk = CARD_PROPERTIES.get(card_id, (0, 0))
         type_str = _card_type_str(card)
-        base     = 10 + i * 7
+        base     = 13 + i * 7
         obs[base]     = 1.0 if type_str == "ATTACK" else 0.0
         obs[base + 1] = 1.0 if type_str == "SKILL"  else 0.0
         obs[base + 2] = 1.0 if type_str == "POWER"  else 0.0
@@ -58,53 +79,67 @@ def game_to_obs(game) -> np.ndarray:
         obs[base + 5] = min(blk  / 20.0, 1.0)
         obs[base + 6] = min(cost / 3.0,  1.0)
 
-    # Живые враги (до 4)
+    # Живые враги (до 4) — 5 значений на врага
     live = [m for m in game.monsters if m.current_hp > 0]
     for i, monster in enumerate(live[:4]):
-        base = 45 + i * 4
+        base = 62 + i * 5
         obs[base]     = monster.current_hp / max(monster.max_hp, 1)
         intent_str    = _intent_str(monster.intent)
         obs[base + 1] = INTENT_TO_IDX.get(intent_str, INTENT_MAX_IDX) / INTENT_MAX_IDX
         obs[base + 2] = min(monster.block / 100.0, 1.0)
         obs[base + 3] = min(_monster_damage(monster) / 30.0, 1.0)
+        obs[base + 4] = min(_get_power(monster, "Ritual") / 10.0, 1.0)
 
-    # Зелья (2 слота): [present, type_norm] × 2
+    # Зелья (2 слота): [present, is_heal, is_attack, is_utility] × 2
     potions = getattr(game, "potions", [])
     for i in range(POTION_SLOTS):
-        base = 61 + i * 2
+        base = 82 + i * 4
         if i < len(potions) and potions[i].potion_id != "Potion Slot":
+            pid = potions[i].potion_id
             obs[base]     = 1.0
-            obs[base + 1] = _potion_type_norm(potions[i].potion_id)
+            obs[base + 1] = 1.0 if pid in _HEAL_POTIONS   else 0.0
+            obs[base + 2] = 1.0 if pid in _ATTACK_POTIONS else 0.0
+            obs[base + 3] = 1.0 if pid not in _HEAL_POTIONS and pid not in _ATTACK_POTIONS else 0.0
 
     return obs
 
 
 def get_valid_actions(game) -> list:
-    """Булева маска допустимых действий (список из ACTION_SIZE bool)."""
+    """Булева маска допустимых действий (список из ACTION_SIZE bool).
+
+    Пространство действий:
+      0-6:   карта 0-6 без цели
+      7-13:  карта 0-6 на врага 0
+      14-20: карта 0-6 на врага 1
+      21-27: карта 0-6 на врага 2
+      28-34: карта 0-6 на врага 3
+      35:    завершить ход
+      36-40: зелье слот 0 (36=без цели, 37-40=враг 0-3)
+      41-45: зелье слот 1 (41=без цели, 42-45=враг 0-3)
+    """
     mask = [False] * ACTION_SIZE
     live = [m for m in game.monsters if m.current_hp > 0]
 
-    for card_idx, card in enumerate(game.hand[:5]):
+    for card_idx, card in enumerate(game.hand[:7]):
         if not getattr(card, "is_playable", True):
             continue
         has_target = getattr(card, "has_target", False)
 
-        # Доп. проверка: ATTACK-карты почти всегда требуют цель
+        # ATTACK-карты почти всегда требуют цель
         if not has_target:
-            card_type = str(getattr(card, "type", "")).upper()
-            ct = card_type.split(".")[-1] if "." in card_type else card_type
+            ct = _card_type_str(card)
             if ct == "ATTACK" and live:
                 has_target = True
 
         if has_target:
             for enemy_group in range(1, min(len(live) + 1, 5)):
-                mask[card_idx + enemy_group * 5] = True
+                mask[card_idx + enemy_group * 7] = True
         else:
             mask[card_idx] = True
 
-    mask[25] = True  # Завершить ход — всегда можно
+    mask[35] = True  # Завершить ход — всегда можно
 
-    # Зелья: действия 26-35 (слот 0: 26-30, слот 1: 31-35)
+    # Зелья: действия 36-45 (слот 0: 36-40, слот 1: 41-45)
     potions = getattr(game, "potions", [])
     for slot in range(POTION_SLOTS):
         if slot >= len(potions):
@@ -112,7 +147,7 @@ def get_valid_actions(game) -> list:
         p = potions[slot]
         if p.potion_id == "Potion Slot" or not getattr(p, "can_use", False):
             continue
-        base = 26 + slot * 5
+        base = 36 + slot * 5
         if getattr(p, "requires_target", False):
             for ei in range(min(len(live), 4)):
                 mask[base + 1 + ei] = True
@@ -126,24 +161,24 @@ def action_to_spirecomm(action: int, game):
     """Конвертирует целое действие в spirecomm Action.
 
     Пространство действий:
-      0-4:   карта 0-4 без цели
-      5-9:   карта 0-4 на врага 0
-      10-14: карта 0-4 на врага 1
-      15-19: карта 0-4 на врага 2
-      20-24: карта 0-4 на врага 3
-      25:    завершить ход
-      26-30: зелье слот 0 (26=без цели, 27-30=враг 0-3)
-      31-35: зелье слот 1 (31=без цели, 32-35=враг 0-3)
+      0-6:   карта 0-6 без цели
+      7-13:  карта 0-6 на врага 0
+      14-20: карта 0-6 на врага 1
+      21-27: карта 0-6 на врага 2
+      28-34: карта 0-6 на врага 3
+      35:    завершить ход
+      36-40: зелье слот 0 (36=без цели, 37-40=враг 0-3)
+      41-45: зелье слот 1 (41=без цели, 42-45=враг 0-3)
     """
-    if action == 25:
+    if action == 35:
         return EndTurnAction()
 
     live = [m for m in game.monsters if m.current_hp > 0]
 
     # Зелья
-    if 26 <= action <= 35:
-        slot          = (action - 26) // 5
-        target_offset = (action - 26) % 5   # 0=без цели, 1-4=враг 0-3
+    if 36 <= action <= 45:
+        slot          = (action - 36) // 5
+        target_offset = (action - 36) % 5  # 0=без цели, 1-4=враг 0-3
         if target_offset == 0:
             return PotionAction(use=True, potion_index=slot)
         enemy_idx = target_offset - 1
@@ -151,8 +186,8 @@ def action_to_spirecomm(action: int, game):
         return PotionAction(use=True, potion_index=slot, target_index=t_idx)
 
     # Карты
-    card_idx     = action % 5
-    target_group = action // 5
+    card_idx     = action % 7
+    target_group = action // 7
 
     if card_idx >= len(game.hand):
         return EndTurnAction()
@@ -179,11 +214,9 @@ class CombatAgent:
 
     def _try_load_model(self):
         import glob
-        import logging
         _log = logging.getLogger("CombatAgent")
         try:
             from stable_baselines3 import PPO
-            # Сначала ищем фиксированное имя, потом последний чекпоинт по шагам
             model_path = os.path.join(MODELS_DIR, "combat_ppo.zip")
             if not os.path.exists(model_path):
                 checkpoints = sorted(
@@ -204,62 +237,44 @@ class CombatAgent:
             action, _ = self.model.predict(obs, deterministic=True)
             action = int(action)
         else:
-            # Случайное допустимое действие
             if valid_actions:
                 valid = [i for i, v in enumerate(valid_actions) if v]
-                return int(np.random.choice(valid)) if valid else 15
+                return int(np.random.choice(valid)) if valid else 35
             return int(np.random.randint(0, ACTION_SIZE))
 
-        # Применяем маску
         if valid_actions and not valid_actions[action]:
             valid = [i for i, v in enumerate(valid_actions) if v]
-            action = valid[0] if valid else 15
+            action = valid[0] if valid else 35
 
         return action
 
     def act(self, game):
-        """Вернуть spirecomm Action для текущего состояния боя."""
         obs    = game_to_obs(game)
         valid  = get_valid_actions(game)
         action = self.predict(obs, valid)
         return action_to_spirecomm(action, game)
 
 
-# ── Утилита ───────────────────────────────────────────────────────────
+# ── Утилиты ───────────────────────────────────────────────────────────
 
 def _card_type_str(card) -> str:
-    """Возвращает тип карты: ATTACK / SKILL / POWER / CURSE / STATUS."""
     s = str(getattr(card, "type", "")).upper()
     return s.split(".")[-1] if "." in s else s
 
 
 def _intent_str(intent) -> str:
-    """Нормализует intent в строку вида 'ATTACK', 'BUFF' и т.д."""
     s = str(intent).upper()
     return s.split(".")[-1] if "." in s else s
 
 
 def _get_power(entity, power_id: str) -> float:
-    """Возвращает количество стаков power_id у entity (0 если нет)."""
     for power in getattr(entity, "powers", []):
         if getattr(power, "power_id", "") == power_id:
             return float(getattr(power, "amount", 0))
     return 0.0
 
 
-_HEALING_POTIONS  = {"HealthPotion", "FruitJuice", "BloodPotion", "LiquidMemories"}
-_OFFENSIVE_POTIONS = {"FirePotion", "ExplosivePotion", "PoisonPotion",
-                      "ThrowingKnivesPotion", "FearPotion", "WeakPotion", "SmokeBomb"}
-
-def _potion_type_norm(potion_id: str) -> float:
-    """Кодирует тип зелья в [0,1]: 0.33=лечение, 0.67=атака, 1.0=баф/другое."""
-    if potion_id in _HEALING_POTIONS:   return 0.33
-    if potion_id in _OFFENSIVE_POTIONS: return 0.67
-    return 1.0
-
-
 def _monster_damage(monster) -> float:
-    """Суммарный урон атаки монстра в этот ход (0 если не атакует)."""
     dmg  = getattr(monster, "move_adjusted_damage", -1)
     hits = getattr(monster, "move_hits", 0)
     if dmg is None or dmg < 0 or not hits:
