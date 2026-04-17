@@ -115,9 +115,17 @@ class BaseMetaAgent(ABC):
             options = getattr(s, "options", [])
             if not options:
                 return ProceedAction()
+            # Фильтруем заблокированные опции — spirecomm их считает, игра нет
+            available = [i for i, o in enumerate(options)
+                         if not getattr(o, "locked", False)]
+            if not available:
+                return ProceedAction()
+            opt_names = [getattr(o, "text", str(o))[:40] for o in options]
             idx = self.choose_event(game)
             idx = max(0, min(idx, len(options) - 1))
-            opt_names = [getattr(o, "text", str(o))[:40] for o in options]
+            # Если выбрали заблокированную — берём ближайшую доступную
+            if idx not in available:
+                idx = available[-1]  # последняя (обычно Leave)
             log.info("[EVENT  ] этаж=%-2s HP=%-7s варианты=%s → #%d '%s'",
                      floor, hp_str, opt_names, idx, opt_names[idx])
             return ChooseAction(idx)
