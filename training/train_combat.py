@@ -42,7 +42,7 @@ from stable_baselines3.common.monitor import Monitor
 from environment.combat_env import CombatEnv
 from config import MODELS_DIR, SEED
 
-TOTAL_TIMESTEPS = 500_000
+TOTAL_TIMESTEPS = 100_000
 LOG_DIR  = os.path.join(_ROOT, "logs", "combat")
 SAVE_DIR = MODELS_DIR
 
@@ -67,7 +67,7 @@ def main():
 
     # Сохранять чекпоинт каждые 10 000 шагов
     checkpoint_cb = CheckpointCallback(
-        save_freq=10_000,
+        save_freq=5_000,
         save_path=SAVE_DIR,
         name_prefix="combat_ppo",
     )
