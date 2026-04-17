@@ -91,6 +91,7 @@ def main():
             seed=SEED,
             device="cpu",
             tensorboard_log=LOG_DIR,
+            policy_kwargs={"net_arch": [128, 128]},
             n_steps=128,
             batch_size=32,
             n_epochs=10,

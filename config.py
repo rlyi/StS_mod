@@ -138,10 +138,11 @@ INTENT_MAX_IDX = 14
 
 # ── Награды ────────────────────────────────────────────────────────────
 REWARD_WIN              =  2.0    # все враги убиты
-REWARD_KILL_ENEMY       =  0.5    # за каждое убийство (было 0.1)
-REWARD_DAMAGE_MULT      =  0.01   # за единицу нанесённого урона (было 0.005)
+REWARD_WIN_HP_MULT      =  1.0    # бонус за оставшийся HP при победе (× hp_pct)
+REWARD_KILL_ENEMY       =  0.5    # за каждое убийство
+REWARD_DAMAGE_MULT      =  0.01   # за единицу реального урона (min(dmg, enemy_hp))
 REWARD_LOSE             = -2.0    # смерть игрока
-REWARD_DAMAGE_TAKEN_MULT= -0.03   # за единицу полученного урона (было -0.01)
+REWARD_DAMAGE_TAKEN_MULT= -0.03   # за единицу полученного урона
 REWARD_TURN_PENALTY     = -0.01   # штраф за каждый ход
 REWARD_ACT1_BOSS        = 10.0    # победа над боссом Акта 1
 
