@@ -39,8 +39,9 @@ def _load_meta_agent():
     """Загружает мета-агента согласно META_AGENT в config.py."""
     from config import META_AGENT
     _AGENTS = {
-        "random": ("agents.meta_agent",      "RandomMetaAgent"),
-        "tree":   ("agents.meta_tree_agent", "DecisionTreeMetaAgent"),
+        "random": ("agents.meta_agent",        "RandomMetaAgent"),
+        "tree":   ("agents.meta_tree_agent",  "DecisionTreeMetaAgent"),
+        "forest": ("agents.meta_forest_agent", "RandomForestMetaAgent"),
     }
     module_name, class_name = _AGENTS.get(META_AGENT, _AGENTS["random"])
     import importlib

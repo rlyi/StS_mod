@@ -12,21 +12,13 @@ from config import (
 # ── Вспомогательные функции (используются также в CombatEnv) ──────────
 
 def game_to_obs(game) -> np.ndarray:
-    """Преобразует состояние игры в вектор наблюдений (32 float32).
+    """Преобразует состояние игры в вектор наблюдений (65 float32).
 
     Структура:
-      [0]     player_hp / max_hp
-      [1]     energy / 3
-      [2]     block / 100
-      [3]     strength / 10  (знаковый, clamp [-1, 1])
-      [4]     dexterity / 10 (знаковый, clamp [-1, 1])
-      [5]     vulnerable / 5
-      [6]     weak / 5
-      [7]     poison / 20
-      [8]     deck_size / 30
-      [9]     discard_size / 30
-      [10..19] hand[0..4]: (card_id/100, cost/3) × 5
-      [20..31] enemies[0..2]: (hp_norm, intent_norm, block_norm, damage_norm) × 3
+      [0-9]   игрок: hp, energy, block, strength, dexterity, vulnerable, weak, poison, deck, discard
+      [10-44] рука (до 5 карт × 7): is_attack, is_skill, is_power, is_other, dmg/20, blk/20, cost/3
+      [45-60] враги (до 4 × 4): hp_norm, intent_norm, block_norm, damage_norm
+      [61-64] зелья (2 слота × 2): present, type_norm
     """
     obs = np.zeros(OBS_SIZE, dtype=np.float32)
 

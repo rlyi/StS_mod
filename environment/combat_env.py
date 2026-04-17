@@ -40,8 +40,9 @@ def _make_meta_agent():
     import importlib
     from config import META_AGENT
     _AGENTS = {
-        "random": ("agents.meta_agent",      "RandomMetaAgent"),
-        "tree":   ("agents.meta_tree_agent", "DecisionTreeMetaAgent"),
+        "random": ("agents.meta_agent",        "RandomMetaAgent"),
+        "tree":   ("agents.meta_tree_agent",  "DecisionTreeMetaAgent"),
+        "forest": ("agents.meta_forest_agent", "RandomForestMetaAgent"),
     }
     module_name, class_name = _AGENTS.get(META_AGENT, _AGENTS["random"])
     cls = getattr(importlib.import_module(module_name), class_name)
@@ -269,66 +270,3 @@ def _drain(q: queue.Queue):
             break
 
 
-def _auto_navigate(screen: str, game):
-    """Случайная навигация для небоевых экранов (во время обучения PPO).
-
-    Покрывает все ScreenType из spirecomm:
-      EVENT, CHEST, SHOP_ROOM, REST, CARD_REWARD, COMBAT_REWARD,
-      MAP, BOSS_REWARD, SHOP_SCREEN, GRID, HAND_SELECT, GAME_OVER, COMPLETE
-    """
-    s = getattr(game, "screen", None)
-
-    if screen == "MAP":
-        nodes = getattr(s, "next_nodes", [])
-        return ChooseAction(random.randrange(len(nodes)) if nodes else 0)
-
-    elif screen == "CARD_REWARD":
-        cards = getattr(s, "cards", [])
-        if not cards:
-            return ProceedAction()
-        if random.random() < 0.8:
-            return ChooseAction(random.randrange(len(cards)))
-        return ProceedAction()
-
-    elif screen in ("CHEST", "OPEN_CHEST"):
-        return ProceedAction()
-
-    elif screen == "HAND_SELECT":
-        num_cards = getattr(s, "num_cards", 1)
-        selected  = getattr(s, "selected_cards", [])
-        cards     = getattr(s, "cards", [])
-        if len(selected) >= num_cards or not cards:
-            return ProceedAction()
-        return ChooseAction(random.randrange(len(cards)))
-
-    elif screen == "GRID":
-        if s and getattr(s, "confirm_up", False):
-            return ProceedAction()
-        cards = getattr(s, "cards", [])
-        if not cards:
-            return ProceedAction()
-        return ChooseAction(random.randrange(len(cards)))
-
-    elif screen == "BOSS_REWARD":
-        relics = getattr(s, "relics", [])
-        return ChooseAction(random.randrange(len(relics)) if relics else 0)
-
-    elif screen == "REST":
-        options = getattr(s, "rest_options", [])
-        if not options:
-            return ProceedAction()
-        return ChooseAction(random.randrange(len(options)))
-
-    elif screen == "EVENT":
-        options = getattr(s, "options", [])
-        return ChooseAction(random.randrange(len(options)) if options else 0)
-
-    elif screen in ("SHOP_SCREEN", "SHOP_ROOM"):
-        return ProceedAction()
-
-    elif screen in ("COMBAT_REWARD", "GAME_OVER", "COMPLETE"):
-        return ProceedAction()
-
-    else:
-        log.warning("Неизвестный экран: '%s' — ProceedAction", screen)
-        return ProceedAction()
