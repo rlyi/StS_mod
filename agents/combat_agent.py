@@ -85,7 +85,8 @@ def game_to_obs(game) -> np.ndarray:
         obs[base + 7] = is_upgraded
 
     # Живые враги (до 4) — 5 значений на врага
-    live = [m for m in game.monsters if m is not None and getattr(m, "current_hp", 0) > 0]
+    live = [m for m in game.monsters if m is not None
+            and getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)]
     for i, monster in enumerate(live[:4]):
         base = 70 + i * 5
         obs[base]     = monster.current_hp / max(monster.max_hp, 1)
@@ -124,7 +125,8 @@ def get_valid_actions(game) -> list:
       46-50: зелье слот 2 (46=без цели, 47-50=враг 0-3)
     """
     mask = [False] * ACTION_SIZE
-    live = [m for m in game.monsters if m is not None and getattr(m, "current_hp", 0) > 0]
+    live = [m for m in game.monsters if m is not None
+            and getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)]
 
     for card_idx, card in enumerate(game.hand[:7]):
         if not getattr(card, "is_playable", True):
@@ -180,7 +182,8 @@ def action_to_spirecomm(action: int, game):
     if action == 35:
         return EndTurnAction()
 
-    live = [m for m in game.monsters if m is not None and getattr(m, "current_hp", 0) > 0]
+    live = [m for m in game.monsters if m is not None
+            and getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)]
 
     # Зелья
     if 36 <= action <= 50:
