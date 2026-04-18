@@ -222,8 +222,9 @@ class CombatEnv(gym.Env):
         if player.current_hp <= 0:
             return StateAction()
 
-        # Все монстры мертвы — бой завершается, ждём COMBAT_REWARD
-        if not any(getattr(m, "current_hp", 0) > 0 for m in game.monsters if m is not None):
+        # Все монстры мертвы или сбежали — бой завершается, ждём COMBAT_REWARD
+        if not any(getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)
+                   for m in game.monsters if m is not None):
             return StateAction()
 
         # Игра ещё анимирует предыдущее действие — ждём завершения

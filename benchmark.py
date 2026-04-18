@@ -46,7 +46,7 @@ from spirecomm.communication.action import (
 from spirecomm.spire.character import PlayerClass
 
 # ── Конфигурация (менять перед каждым запуском) ───────────────────────────
-AGENT         = "random"          # "random" | "tree" | "forest"
+AGENT         = "tree"          # "random" | "tree" | "forest"
 SEEDS         = [42, 123, 456]    # список сидов
 RUNS_PER_SEED = 10                # забегов на каждый сид
 RESULTS_FILE  = os.path.join(_ROOT, "data", f"benchmark_{AGENT}.json")
