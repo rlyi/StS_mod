@@ -176,24 +176,33 @@ class BaseMetaAgent(ABC):
         elif screen == "GRID":
             if s and getattr(s, "confirm_up", False):
                 return ProceedAction()
-            cards    = getattr(s, "cards", [])
-            selected = getattr(s, "selected_cards", [])
+            cards     = getattr(s, "cards", [])
+            selected  = getattr(s, "selected_cards", [])
             num_cards = getattr(s, "num_cards", 1)
             if not cards:
                 return ProceedAction()
-            # Уже выбрали нужное количество — подтверждаем
             if len(selected) >= num_cards:
                 return ProceedAction()
-            # Исключаем уже выбранные карты из вариантов
-            selected_ids = {id(c) for c in selected}
-            available_cards = [c for c in cards if id(c) not in selected_ids]
-            if not available_cards:
+            # Исключаем уже выбранные позиции по card_id с учётом дублей
+            # (id() объектов ненадёжен — spirecomm создаёт новые объекты на каждый callback)
+            sel_counts: dict[str, int] = {}
+            for c in selected:
+                k = getattr(c, "card_id", str(c))
+                sel_counts[k] = sel_counts.get(k, 0) + 1
+            remaining = dict(sel_counts)
+            available_indices = []
+            for i, c in enumerate(cards):
+                k = getattr(c, "card_id", str(c))
+                if remaining.get(k, 0) > 0:
+                    remaining[k] -= 1
+                else:
+                    available_indices.append(i)
+            if not available_indices:
                 return ProceedAction()
             for_upgrade = getattr(s, "for_upgrade", False)
             idx = self.choose_grid(game, for_upgrade=for_upgrade)
-            # Убеждаемся что индекс указывает на ещё не выбранную карту
-            if idx < len(cards) and id(cards[idx]) in selected_ids:
-                idx = cards.index(available_cards[0])
+            if idx not in available_indices:
+                idx = available_indices[0]
             return ChooseAction(idx)
 
         elif screen in ("GAME_OVER", "COMPLETE"):
