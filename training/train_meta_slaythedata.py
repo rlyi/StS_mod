@@ -33,11 +33,13 @@ MAX_CARD_SAMPLES  = 200_000
 MAX_EVENT_SAMPLES = 100_000
 
 # Накопители
-X_cards,    y_cards    = [], []
-X_campfire, y_campfire = [], []
-X_path,     y_path     = [], []
-X_event,    y_event    = [], []
-X_shop,     y_shop     = [], []
+X_cards,    y_cards,    w_cards    = [], [], []
+X_campfire, y_campfire, w_campfire = [], [], []
+X_path,     y_path,     w_path     = [], [], []
+X_event,    y_event,    w_event    = [], [], []
+X_shop,     y_shop,     w_shop     = [], [], []
+
+VICTORY_WEIGHT = 3.0
 
 stats = {'files_processed': 0, 'total_runs': 0, 'ironclad_filtered': 0, 'victories': 0}
 
@@ -89,6 +91,7 @@ def process_run(r):
     is_victory = r.get('victory', False)
     if is_victory:
         stats['victories'] += 1
+    w = VICTORY_WEIGHT if is_victory else 1.0
 
     # Размер итоговой колоды как прокси для deck_size во время рана
     deck_size_proxy = min(len(r.get('master_deck', [])) / 30.0, 1.0)
@@ -109,10 +112,12 @@ def process_run(r):
                 break
             X_cards.append(ctx + card_features(card_id))
             y_cards.append(0)
+            w_cards.append(w)
 
         if picked and picked != 'SKIP':
             X_cards.append(ctx + card_features(picked))
             y_cards.append(1)
+            w_cards.append(w)
 
     # ── 2. CAMPFIRE ──────────────────────────────────────────────────────
     # Фичи: [hp_pct, floor/17, gold_norm, is_pre_boss, deck_size_proxy]
@@ -126,6 +131,7 @@ def process_run(r):
         is_pre_boss = 1.0 if floor >= 14 else 0.0
         X_campfire.append(ctx + [is_pre_boss, deck_size_proxy])
         y_campfire.append(0 if key == 'REST' else 1)
+        w_campfire.append(w)
 
     # ── 3. PATH ──────────────────────────────────────────────────────────
     # Фичи: [hp_pct, floor/17, gold_norm]
@@ -136,6 +142,7 @@ def process_run(r):
             floor = floor_idx + 1
             X_path.append(extract_ctx(r, floor))
             y_path.append(node_map[node_type])
+            w_path.append(w)
 
     # ── 4. EVENT ─────────────────────────────────────────────────────────
     # Фичи: [hp_pct, floor/17, gold_norm, event_hash]
@@ -150,6 +157,7 @@ def process_run(r):
         event_hash = hash(event_name) % 997 / 997.0
         X_event.append(ctx + [event_hash])
         y_event.append(0 if _is_skip(choice) else 1)
+        w_event.append(w)
 
     # ── 5. SHOP ──────────────────────────────────────────────────────────
     # Label: 0 = карта, 1 = реликвия
@@ -160,6 +168,7 @@ def process_run(r):
         is_relic = any(c.isupper() for c in item[1:]) if len(item) > 1 else False
         X_shop.append(extract_ctx(r, floor))
         y_shop.append(1 if is_relic else 0)
+        w_shop.append(w)
 
 
 # ── Обработка файлов ──────────────────────────────────────────────────────
@@ -199,30 +208,31 @@ log(f"Файлов: {stats['files_processed']}  ранов: {stats['ironclad_fil
 
 # ── Обучение моделей ──────────────────────────────────────────────────────
 models_to_train = [
-    ('card',     X_cards,    y_cards),
-    ('campfire', X_campfire, y_campfire),
-    ('path',     X_path,     y_path),
-    ('event',    X_event,    y_event),
-    ('shop',     X_shop,     y_shop),
+    ('card',     X_cards,    y_cards,    w_cards),
+    ('campfire', X_campfire, y_campfire, w_campfire),
+    ('path',     X_path,     y_path,     w_path),
+    ('event',    X_event,    y_event,    w_event),
+    ('shop',     X_shop,     y_shop,     w_shop),
 ]
 
-for name, X, y in models_to_train:
+for name, X, y, w in models_to_train:
     if len(X) < 100:
         log(f"{name}: недостаточно данных ({len(X)} записей) — пропуск")
         continue
 
     X_arr = np.array(X, dtype=np.float32)
     y_arr = np.array(y)
+    w_arr = np.array(w, dtype=np.float32)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_arr, y_arr, test_size=0.2, random_state=42
+    X_train, X_test, y_train, y_test, w_train, _ = train_test_split(
+        X_arr, y_arr, w_arr, test_size=0.2, random_state=42
     )
 
     clf = DecisionTreeClassifier(max_depth=10, min_samples_leaf=50, random_state=42)
-    clf.fit(X_train, y_train)
+    clf.fit(X_train, y_train, sample_weight=w_train)
 
     acc = clf.score(X_test, y_test)
-    log(f"{name}: {len(X)} записей, accuracy={acc:.3f}")
+    log(f"{name}: {len(X)} записей (pobedy x{VICTORY_WEIGHT}), accuracy={acc:.3f}")
 
     path = os.path.join(MODELS_DIR, f'meta_{name}_slaythedata_dt.pkl')
     with open(path, 'wb') as f:
