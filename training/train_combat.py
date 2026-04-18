@@ -38,11 +38,13 @@ sys.stderr = open(os.path.join(_LOG_DIR, "train_errors.log"), "a", encoding="utf
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
+from gymnasium.wrappers import TimeLimit
 
 from environment.combat_env import CombatEnv
 from config import MODELS_DIR, SEED
 
-TOTAL_TIMESTEPS = 100_000
+TOTAL_TIMESTEPS = 500_000
+MAX_EPISODE_STEPS = 200  # принудительно завершать бесконечные бои
 LOG_DIR  = os.path.join(_ROOT, "logs", "combat")
 SAVE_DIR = MODELS_DIR
 
@@ -63,7 +65,7 @@ def main():
     os.makedirs(SAVE_DIR, exist_ok=True)
 
     log.info("Инициализация окружения...")
-    env = Monitor(CombatEnv())
+    env = Monitor(TimeLimit(CombatEnv(), max_episode_steps=MAX_EPISODE_STEPS))
 
     # Сохранять чекпоинт каждые 10 000 шагов
     checkpoint_cb = CheckpointCallback(
@@ -92,8 +94,8 @@ def main():
             device="cpu",
             tensorboard_log=LOG_DIR,
             policy_kwargs={"net_arch": [128, 128]},
-            n_steps=256,
-            batch_size=64,
+            n_steps=2048,
+            batch_size=256,
             n_epochs=10,
             learning_rate=3e-4,
             gamma=0.99,
