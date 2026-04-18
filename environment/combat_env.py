@@ -223,7 +223,12 @@ class CombatEnv(gym.Env):
             return StateAction()
 
         # Все монстры мертвы — бой завершается, ждём COMBAT_REWARD
-        if not any(m.current_hp > 0 for m in game.monsters):
+        if not any(getattr(m, "current_hp", 0) > 0 for m in game.monsters if m is not None):
+            return StateAction()
+
+        # Игра ещё анимирует предыдущее действие — ждём завершения
+        action_phase = str(getattr(game, "action_phase", "")).upper()
+        if "EXECUTING" in action_phase:
             return StateAction()
 
         # Если предыдущие команды отклонялись (игра между ходами), не нагружаем PPO —

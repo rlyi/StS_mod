@@ -33,7 +33,7 @@ def calculate_reward(prev_game, curr_game) -> float:
         return reward
 
     # ── Урон по врагам и убийства ─────────────────────────────────────
-    prev_live = [m for m in prev_game.monsters if m.current_hp > 0]
+    prev_live = [m for m in prev_game.monsters if m is not None and getattr(m, "current_hp", 0) > 0]
 
     for prev_m in prev_live:
         curr_m = _find_monster(curr_game.monsters, prev_m.name)
@@ -46,7 +46,7 @@ def calculate_reward(prev_game, curr_game) -> float:
                 reward += min(dmg, prev_m.current_hp) * REWARD_DAMAGE_MULT
 
     # ── Победа (все враги убиты) ──────────────────────────────────────
-    curr_all_dead = all(m.current_hp <= 0 for m in curr_game.monsters)
+    curr_all_dead = all(getattr(m, "current_hp", 0) <= 0 for m in curr_game.monsters if m is not None)
     if prev_live and curr_all_dead:
         hp_pct = curr_game.player.current_hp / max(curr_game.player.max_hp, 1)
         reward += REWARD_WIN + REWARD_WIN_HP_MULT * hp_pct
