@@ -35,7 +35,8 @@ log = logging.getLogger("train_combat")
 # Перенаправляем stderr в файл (stdout уже занят протоколом)
 sys.stderr = open(os.path.join(_LOG_DIR, "train_errors.log"), "a", encoding="utf-8")
 
-from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from gymnasium.wrappers import TimeLimit
@@ -65,7 +66,10 @@ def main():
     os.makedirs(SAVE_DIR, exist_ok=True)
 
     log.info("Инициализация окружения...")
-    env = Monitor(TimeLimit(CombatEnv(), max_episode_steps=MAX_EPISODE_STEPS))
+    env = ActionMasker(
+        Monitor(TimeLimit(CombatEnv(), max_episode_steps=MAX_EPISODE_STEPS)),
+        lambda e: e.unwrapped.action_masks(),
+    )
 
     # Сохранять чекпоинт каждые 10 000 шагов
     checkpoint_cb = CheckpointCallback(
@@ -78,7 +82,7 @@ def main():
     checkpoint = _latest_checkpoint(SAVE_DIR)
     if checkpoint:
         log.info("Дообучение с чекпоинта: %s", checkpoint)
-        model = PPO.load(
+        model = MaskablePPO.load(
             checkpoint,
             env=env,
             device="cpu",
@@ -86,7 +90,7 @@ def main():
         )
     else:
         log.info("Чекпоинт не найден — начинаем с нуля")
-        model = PPO(
+        model = MaskablePPO(
             policy="MlpPolicy",
             env=env,
             verbose=0,

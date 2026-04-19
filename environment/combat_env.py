@@ -73,6 +73,8 @@ class CombatEnv(gym.Env):
         self._done = False
         self._error_count = 0
         self._meta_agent = _make_meta_agent()
+        self._current_mask: list[bool] = [False] * ACTION_SIZE
+        self._current_mask[25] = True  # EndTurn всегда валиден
 
     # ── Gymnasium interface ────────────────────────────────────────────
 
@@ -95,6 +97,7 @@ class CombatEnv(gym.Env):
             )
 
         self._prev_game = game
+        self._current_mask = get_valid_actions(game)
         return game_to_obs(game), {}
 
     def step(self, action: int):
@@ -116,6 +119,7 @@ class CombatEnv(gym.Env):
             game = msg[1]
             reward = calculate_reward(self._prev_game, game)
             self._prev_game = game
+            self._current_mask = get_valid_actions(game)
             return game_to_obs(game), reward, False, False, {}
 
         elif kind == "terminal":
@@ -131,6 +135,10 @@ class CombatEnv(gym.Env):
 
     def close(self):
         pass  # Coordinator работает через stdin/stdout — ОС закроет при выходе
+
+    def action_masks(self) -> np.ndarray:
+        """MaskablePPO вызывает этот метод после каждого step/reset."""
+        return np.array(self._current_mask, dtype=bool)
 
     # ── Внутренние методы ─────────────────────────────────────────────
 
@@ -245,12 +253,6 @@ class CombatEnv(gym.Env):
             action_int = self._action_q.get(timeout=60)
         except queue.Empty:
             return EndTurnAction()
-
-        # Применяем маску: если PPO выбрал невалидное действие — берём первое допустимое
-        mask = get_valid_actions(game)
-        if not mask[action_int]:
-            valid = [i for i, v in enumerate(mask) if v]
-            action_int = valid[0] if valid else 25  # EndTurn по умолчанию
 
         self._error_count = 0
         return action_to_spirecomm(action_int, game)
