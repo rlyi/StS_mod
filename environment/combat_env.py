@@ -124,9 +124,12 @@ class CombatEnv(gym.Env):
 
         elif kind == "terminal":
             _, outcome, game = msg
-            reward = 2.0 if outcome == "win" else -2.0
             self._done = True
             obs = game_to_obs(game) if (game and game.player) else np.zeros(OBS_SIZE, dtype=np.float32)
+            if game and game.player:
+                reward = calculate_reward(self._prev_game, game)
+            else:
+                reward = 2.0 if outcome == "win" else -2.0
             return obs, reward, True, False, {"outcome": outcome}
 
         # Ошибка или неизвестное сообщение
