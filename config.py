@@ -8,7 +8,7 @@ MAX_FLOOR = 17  # Act 1: floors 1-17
 
 # ── Meta agent selection ───────────────────────────────────────────────
 # Варианты: "random" | "tree" | "forest" | "imitation" | "llm"
-META_AGENT = "tree"
+META_AGENT = "llm"
 
 # ── Paths ──────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))

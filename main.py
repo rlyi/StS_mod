@@ -42,6 +42,7 @@ def _load_meta_agent():
         "random": ("agents.meta_agent",        "RandomMetaAgent"),
         "tree":   ("agents.meta_tree_agent",  "DecisionTreeMetaAgent"),
         "forest": ("agents.meta_forest_agent", "RandomForestMetaAgent"),
+        "llm":    ("agents.meta_llm_agent",    "LLMMetaAgent"),
     }
     module_name, class_name = _AGENTS.get(META_AGENT, _AGENTS["random"])
     import importlib
