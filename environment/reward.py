@@ -60,6 +60,6 @@ def calculate_reward(prev_game, curr_game) -> float:
 
 def _find_monster(monsters, name: str):
     for m in monsters:
-        if m.name == name:
+        if m is not None and m.name == name:
             return m
     return None

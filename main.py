@@ -35,20 +35,7 @@ sys.stderr = open(os.path.join(_LOG_DIR, "ai_errors.log"), "a", encoding="utf-8"
 sys.path.insert(0, _ROOT)
 
 
-def _load_meta_agent():
-    """Загружает мета-агента согласно META_AGENT в config.py."""
-    from config import META_AGENT
-    _AGENTS = {
-        "random": ("agents.meta_agent",        "RandomMetaAgent"),
-        "tree":   ("agents.meta_tree_agent",  "DecisionTreeMetaAgent"),
-        "forest": ("agents.meta_forest_agent", "RandomForestMetaAgent"),
-        "llm":    ("agents.meta_llm_agent",    "LLMMetaAgent"),
-    }
-    module_name, class_name = _AGENTS.get(META_AGENT, _AGENTS["random"])
-    import importlib
-    cls = getattr(importlib.import_module(module_name), class_name)
-    log.info("Мета-агент: %s (%s)", class_name, META_AGENT)
-    return cls()
+from agents import make_meta_agent as _load_meta_agent
 
 
 # spirecomm импортируется быстро — можно сразу

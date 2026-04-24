@@ -35,20 +35,7 @@ from agents.combat_agent import game_to_obs, action_to_spirecomm, get_valid_acti
 from environment.reward import calculate_reward
 
 
-def _make_meta_agent():
-    """Загружает мета-агента согласно META_AGENT в config.py."""
-    import importlib
-    from config import META_AGENT
-    _AGENTS = {
-        "random": ("agents.meta_agent",        "RandomMetaAgent"),
-        "tree":   ("agents.meta_tree_agent",  "DecisionTreeMetaAgent"),
-        "forest": ("agents.meta_forest_agent", "RandomForestMetaAgent"),
-        "llm":    ("agents.meta_llm_agent",    "LLMMetaAgent"),
-    }
-    module_name, class_name = _AGENTS.get(META_AGENT, _AGENTS["random"])
-    cls = getattr(importlib.import_module(module_name), class_name)
-    log.info("Мета-агент: %s (%s)", class_name, META_AGENT)
-    return cls()
+from agents import make_meta_agent as _make_meta_agent
 
 log = logging.getLogger("CombatEnv")
 
@@ -75,7 +62,7 @@ class CombatEnv(gym.Env):
         self._error_count = 0
         self._meta_agent = _make_meta_agent()
         self._current_mask: list[bool] = [False] * ACTION_SIZE
-        self._current_mask[25] = True  # EndTurn всегда валиден
+        self._current_mask[35] = True  # EndTurn всегда валиден
 
     # ── Gymnasium interface ────────────────────────────────────────────
 

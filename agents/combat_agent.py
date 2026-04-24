@@ -37,7 +37,7 @@ def game_to_obs(game) -> np.ndarray:
       [14-69] рука (до 7 карт × 8): is_attack, is_skill, is_power, is_other,
                                      dmg/20, blk/20, cost/3, is_upgraded
       [70-89] враги (до 4 × 5): hp_norm, intent_norm, block_norm, damage_norm, ritual_norm
-      [90-97] зелья (2 слота × 4): present, is_heal, is_attack, is_utility
+      [90-101] зелья (3 слота × 4): present, is_heal, is_attack, is_utility
     """
     obs = np.zeros(OBS_SIZE, dtype=np.float32)
 
