@@ -18,18 +18,11 @@ _ATTACK_POTIONS = {
 }
 # Всё остальное — utility (баф, энергия, карты и т.д.)
 
-# ── Пауэры ────────────────────────────────────────────────────────────
-# Пауэры игрока которые влияют на тактику
-_PLAYER_POWERS = [
-    "Strength", "Dexterity", "Vulnerable", "Weakened", "Poison",
-    "Metallicize", "Corruption", "Barricade",
-]
-
 
 # ── Вспомогательные функции (используются также в CombatEnv) ──────────
 
 def game_to_obs(game) -> np.ndarray:
-    """Преобразует состояние игры в вектор наблюдений (98 float32).
+    """Преобразует состояние игры в вектор наблюдений (102 float32).
 
     Структура:
       [0-13]  игрок: hp, energy, block, strength, dexterity, vulnerable, weak,
@@ -48,7 +41,7 @@ def game_to_obs(game) -> np.ndarray:
 
     # Игрок — базовые
     obs[0] = player.current_hp / max(player.max_hp, 1)
-    obs[1] = player.energy / 3.0
+    obs[1] = min(player.energy / 3.0, 1.0)
     obs[2] = min(player.block / 100.0, 1.0)
 
     # Игрок — эффекты
