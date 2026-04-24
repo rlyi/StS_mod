@@ -53,7 +53,7 @@ def _load_meta_agent():
 
 # spirecomm импортируется быстро — можно сразу
 from spirecomm.communication.coordinator import Coordinator
-from spirecomm.communication.action import StateAction, ProceedAction
+from spirecomm.communication.action import StateAction, ProceedAction, EndTurnAction
 
 
 def _screen_str(game) -> str:
@@ -112,6 +112,18 @@ class SlayTheSpireAI:
         if screen == "NONE":
             if player is None:
                 return StateAction()
+            if player.current_hp <= 0:
+                return StateAction()
+            if not any(getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)
+                       for m in game.monsters if m is not None):
+                return StateAction()
+            action_phase = str(getattr(game, "action_phase", "")).upper()
+            if "EXECUTING" in action_phase:
+                return StateAction()
+            error_count = getattr(self, "_error_count", 0)
+            if error_count >= 2:
+                self._error_count = 0
+                return EndTurnAction()
             self._turn += 1
             if self._turn == 1:
                 log.info("Бой начался | этаж=%s HP=%d/%d",

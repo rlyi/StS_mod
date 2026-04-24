@@ -46,9 +46,9 @@ from spirecomm.communication.action import (
 from spirecomm.spire.character import PlayerClass
 
 # ── Конфигурация (менять перед каждым запуском) ───────────────────────────
-AGENT         = "tree"          # "random" | "tree" | "forest"
-SEEDS         = [42, 123, 456]    # список сидов
-RUNS_PER_SEED = 10                # забегов на каждый сид
+AGENT         = "forest"          # "random" | "tree" | "forest" | "llm"
+SEEDS         = [42, 123, 456, 537]    # список сидов
+RUNS_PER_SEED = 25                # забегов на каждый сид
 RESULTS_FILE  = os.path.join(_ROOT, "data", f"benchmark_{AGENT}.json")
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -56,6 +56,7 @@ _AGENT_MAP = {
     "random": ("agents.meta_agent",        "RandomMetaAgent"),
     "tree":   ("agents.meta_tree_agent",   "DecisionTreeMetaAgent"),
     "forest": ("agents.meta_forest_agent", "RandomForestMetaAgent"),
+    "llm":    ("agents.meta_llm_agent",    "LLMMetaAgent"),
 }
 
 BENCHMARK_AGENTS = [AGENT]
@@ -231,7 +232,7 @@ class BenchmarkRunner:
             return StateAction()
         if player.current_hp <= 0:
             return StateAction()
-        if not any(getattr(m, "current_hp", 0) > 0
+        if not any(getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)
                    for m in game.monsters if m is not None):
             return StateAction()
 

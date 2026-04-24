@@ -223,7 +223,7 @@ class CombatEnv(gym.Env):
         if screen != "NONE":
             self._error_count = 0
             action = self._meta_agent.act(game)
-            log.debug("Навигация: %-20s → %s", screen, type(action).__name__)
+            log.info("Навигация: %-20s → %s", screen, type(action).__name__)
             return action
 
         # ── В бою: player может быть None на старте ───────────────────

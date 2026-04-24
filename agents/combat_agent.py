@@ -226,7 +226,7 @@ class CombatAgent:
         import glob
         _log = logging.getLogger("CombatAgent")
         try:
-            from stable_baselines3 import PPO
+            from sb3_contrib import MaskablePPO
             model_path = os.path.join(MODELS_DIR, "combat_ppo.zip")
             if not os.path.exists(model_path):
                 checkpoints = sorted(
@@ -235,28 +235,23 @@ class CombatAgent:
                 )
                 model_path = checkpoints[-1] if checkpoints else None
             if model_path and os.path.exists(model_path):
-                self.model = PPO.load(model_path)
+                self.model = MaskablePPO.load(model_path)
                 _log.info("Модель загружена из %s", model_path)
             else:
                 _log.info("Модель не найдена — используется случайная политика")
         except ImportError:
-            _log.warning("stable-baselines3 не установлен — случайная политика")
+            _log.warning("sb3_contrib не установлен — случайная политика")
 
     def predict(self, obs: np.ndarray, valid_actions: list | None = None) -> int:
         if self.model is not None:
-            action, _ = self.model.predict(obs, deterministic=True)
-            action = int(action)
-        else:
-            if valid_actions:
-                valid = [i for i, v in enumerate(valid_actions) if v]
-                return int(np.random.choice(valid)) if valid else 35
-            return int(np.random.randint(0, ACTION_SIZE))
+            masks = np.array(valid_actions, dtype=bool) if valid_actions else None
+            action, _ = self.model.predict(obs, deterministic=True, action_masks=masks)
+            return int(action)
 
-        if valid_actions and not valid_actions[action]:
+        if valid_actions:
             valid = [i for i, v in enumerate(valid_actions) if v]
-            action = valid[0] if valid else 35
-
-        return action
+            return int(np.random.choice(valid)) if valid else 35
+        return int(np.random.randint(0, ACTION_SIZE))
 
     def act(self, game):
         obs    = game_to_obs(game)
