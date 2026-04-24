@@ -145,7 +145,19 @@ class BaseMetaAgent(ABC):
             return ChooseAction(idx)
 
         elif screen == "COMBAT_REWARD":
-            return ProceedAction()
+            rewards = getattr(s, "rewards", [])
+            for i, reward in enumerate(rewards):
+                rt = str(getattr(reward, "reward_type", "")).upper().split(".")[-1]
+                if rt == "POTION":
+                    potions = getattr(game, "potions", [])
+                    if any(getattr(p, "potion_id", "Potion Slot") == "Potion Slot"
+                           for p in potions):
+                        return ChooseAction(i)
+                    continue  # слоты полны — пропускаем зелье
+                if rt in ("CARD", "GOLD", "RELIC", "RELIC_AND_GOLD",
+                          "EMERALD_KEY", "SAPPHIRE_KEY", "STOLEN_GOLD"):
+                    return ChooseAction(i)
+            return ProceedAction()  # все награды собраны
 
         elif screen in ("SHOP_SCREEN", "SHOP_ROOM"):
             idx = self.choose_shop(game)
