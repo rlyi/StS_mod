@@ -9,7 +9,8 @@ from agents.base_agent import BaseMetaAgent
 LM_STUDIO_URL = "http://localhost:1234/v1/chat/completions"
 LM_MODEL      = "qwen/qwen3-8b"
 
-_MAX_TOKENS = 128
+_MAX_TOKENS  = 128
+_MAX_HISTORY = 50  # записей истории (хватит на полный Act 1 с запасом)
 
 _SYSTEM = """You are an expert Slay the Spire player controlling an Ironclad, Act 1 (floors 1-17), Ascension 0.
 Respond ONLY with a valid JSON object, no extra text.
@@ -124,7 +125,6 @@ _CARD_DESC = {
     "Limit Break":      "Double your Strength. Exhaust.",
     "Offering":         "Lose 6 HP. Gain 2 Energy. Draw 3 cards. Exhaust.",
     "Champion":         "Power. Apply 1 Weak and Vulnerable to ALL enemies at start of each turn.",
-    "Berserk":          "Power. Lose 1 HP at start of turn, gain 1 Energy.",
     # Статусы / проклятия
     "Wound":            "STATUS. Unplayable.",
     "Burn":             "STATUS. Unplayable. At end of your turn take 2 damage.",
@@ -146,7 +146,6 @@ _CARD_DESC = {
 
 
 def _card_info(name: str) -> str:
-    """Возвращает описание карты или пустую строку если нет."""
     base = name.split("+")[0].strip()
     upgraded = "+" in name
     desc = _CARD_DESC.get(base, "")
@@ -222,6 +221,22 @@ class LLMMetaAgent(BaseMetaAgent):
         self.model   = model
         self.timeout = timeout
         self.log     = logging.getLogger("LLMMetaAgent")
+        self._history: list[str] = []
+
+    # ── История рана ─────────────────────────────────────────────────
+
+    def reset_run(self) -> None:
+        self._history.clear()
+        self.log.info("LLMMetaAgent: история рана сброшена")
+
+    def _log(self, entry: str) -> None:
+        self._history.append(entry)
+
+    def _history_block(self) -> str:
+        if not self._history:
+            return ""
+        lines = self._history[-_MAX_HISTORY:]
+        return "RUN HISTORY (your decisions this run):\n" + "\n".join(f"  {l}" for l in lines) + "\n\n"
 
     # ── LLM call ─────────────────────────────────────────────────────
 
@@ -240,7 +255,6 @@ class LLMMetaAgent(BaseMetaAgent):
         resp = requests.post(self.url, json=payload, timeout=self.timeout)
         resp.raise_for_status()
         text = resp.json()["choices"][0]["message"]["content"].strip()
-        # Fallback: если structured output не сработал — ищем JSON регуляркой
         try:
             return json.loads(text)
         except json.JSONDecodeError:
@@ -265,6 +279,7 @@ class LLMMetaAgent(BaseMetaAgent):
         if not cards:
             return -1
 
+        floor = getattr(game, "floor", "?")
         names = [getattr(c, "name", str(c)) for c in cards]
         opts  = "\n".join(
             f"  {i}: {n}" + (f" — {_card_info(n)}" if _card_info(n) else "")
@@ -272,6 +287,7 @@ class LLMMetaAgent(BaseMetaAgent):
         )
         prompt = (
             f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
             f"CARD REWARD — pick the best card for your deck, or skip:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(cards)-1} or -1 to skip>}}'
         )
@@ -279,9 +295,11 @@ class LLMMetaAgent(BaseMetaAgent):
             data   = self._call(prompt)
             choice = int(data.get("choice", 0))
             if choice < 0:
+                self._log(f"F{floor}  CARD  SKIP  [options: {', '.join(names)}]")
                 self.log.info("LLM choose_card: SKIP")
                 return -1
             choice = max(0, min(choice, len(cards) - 1))
+            self._log(f"F{floor}  CARD  took '{names[choice]}'  [options: {', '.join(names)}]")
             self.log.info("LLM choose_card: %d (%s)", choice, names[choice])
             return choice
         except Exception as e:
@@ -293,24 +311,33 @@ class LLMMetaAgent(BaseMetaAgent):
         if not nodes:
             return 0
 
+        floor   = getattr(game, "floor", "?")
         symbols = [str(getattr(n, "symbol", "?")).upper() for n in nodes]
         opts    = "\n".join(
             f"  {i}: {_NODE_DESC.get(s, s)} [{s}]" for i, s in enumerate(symbols)
         )
         prompt = (
             f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
             f"MAP — choose your next node:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(nodes)-1}>}}'
         )
         idx = self._ask_index(prompt, len(nodes), fallback=random.randrange(len(nodes)))
-        self.log.info("LLM choose_path: %d (%s)", idx, symbols[idx] if idx < len(symbols) else "?")
+        chosen = symbols[idx] if idx < len(symbols) else "?"
+        self._log(
+            f"F{floor}  MAP   chose {_NODE_DESC.get(chosen, chosen)} [{chosen}]"
+            f"  [options: {', '.join(symbols)}]"
+        )
+        self.log.info("LLM choose_path: %d (%s)", idx, chosen)
         return idx
 
     def choose_rest(self, game) -> str:
+        floor    = getattr(game, "floor", "?")
         hp_pct   = game.current_hp / max(game.max_hp or 1, 1)
         heal_amt = int((game.max_hp or 0) * 0.3)
         prompt = (
             f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
             f"REST SITE:\n"
             f"  REST: heal {heal_amt} HP\n"
             f"  SMITH: permanently upgrade one card in your deck\n\n"
@@ -321,10 +348,12 @@ class LLMMetaAgent(BaseMetaAgent):
             data   = self._call(prompt, schema=_SCHEMA_STR)
             choice = str(data.get("choice", fallback)).upper().strip()
             result = choice if choice in ("REST", "SMITH") else fallback
+            self._log(f"F{floor}  REST  {result}  [HP {game.current_hp}/{game.max_hp}]")
             self.log.info("LLM choose_rest: %s", result)
             return result
         except Exception as e:
             self.log.warning("LLM rest error: %s", e)
+            self._log(f"F{floor}  REST  {fallback} (fallback)  [HP {game.current_hp}/{game.max_hp}]")
             return fallback
 
     def choose_event(self, game) -> int:
@@ -333,15 +362,19 @@ class LLMMetaAgent(BaseMetaAgent):
         if not options:
             return 0
 
+        floor      = getattr(game, "floor", "?")
         event_name = getattr(s, "event_name", "Unknown Event")
         opt_texts  = [getattr(o, "text", str(o)) for o in options]
         opts       = "\n".join(f"  {i}: {t}" for i, t in enumerate(opt_texts))
         prompt = (
             f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
             f"EVENT: {event_name}\nOptions:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(options)-1}>}}'
         )
         idx = self._ask_index(prompt, len(options), fallback=len(options) - 1)
+        chosen_text = opt_texts[idx][:50] if idx < len(opt_texts) else f"#{idx}"
+        self._log(f"F{floor}  EVENT '{event_name}' → '{chosen_text}'")
         self.log.info("LLM choose_event '%s': %d", event_name, idx)
         return idx
 
@@ -350,14 +383,17 @@ class LLMMetaAgent(BaseMetaAgent):
         if not relics:
             return 0
 
+        floor = getattr(game, "floor", "?")
         names = [getattr(r, "name", str(r)) for r in relics]
         opts  = "\n".join(f"  {i}: {n}" for i, n in enumerate(names))
         prompt = (
             f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
             f"BOSS RELIC — choose one (these are powerful relics that shape your entire strategy):\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(relics)-1}>}}'
         )
         idx = self._ask_index(prompt, len(relics), fallback=0)
+        self._log(f"F{floor}  BOSS  chose '{names[idx]}'  [options: {', '.join(names)}]")
         self.log.info("LLM choose_boss_relic: %d (%s)", idx, names[idx])
         return idx
 
@@ -365,6 +401,7 @@ class LLMMetaAgent(BaseMetaAgent):
         """Возвращает индекс в объединённом списке [cards | relics | potions] или -1 = выйти."""
         s       = getattr(game, "screen", None)
         gold    = getattr(game, "gold", 0)
+        floor   = getattr(game, "floor", "?")
         cards   = getattr(s, "cards",   [])
         relics  = getattr(s, "relics",  [])
         potions = getattr(s, "potions", [])
@@ -384,6 +421,7 @@ class LLMMetaAgent(BaseMetaAgent):
         opts = "\n".join(fmt(item, i) for i, item in enumerate(all_items))
         prompt = (
             f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
             f"SHOP — you have {gold} gold. Items:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(all_items)-1} or -1 to leave shop>}}'
         )
@@ -391,14 +429,17 @@ class LLMMetaAgent(BaseMetaAgent):
             data   = self._call(prompt)
             choice = int(data.get("choice", -1))
             if choice < 0:
+                self._log(f"F{floor}  SHOP  left  [{gold}g remaining]")
                 self.log.info("LLM choose_shop: leave")
                 return -1
             choice = max(0, min(choice, len(all_items) - 1))
             name   = getattr(all_items[choice], "name", str(all_items[choice]))
             price  = getattr(all_items[choice], "price", 0)
             if isinstance(price, int) and price > gold:
+                self._log(f"F{floor}  SHOP  left ('{name}' too expensive: {price}g > {gold}g)")
                 self.log.info("LLM choose_shop: %s too expensive (%d > %d) — leave", name, price, gold)
                 return -1
+            self._log(f"F{floor}  SHOP  bought '{name}' {price}g  [{gold - price}g left]")
             self.log.info("LLM choose_shop: %d (%s)", choice, name)
             return choice
         except Exception as e:
@@ -412,6 +453,7 @@ class LLMMetaAgent(BaseMetaAgent):
         if not cards:
             return 0
 
+        floor      = getattr(game, "floor", "?")
         is_purge   = getattr(s, "for_purge",   False)
         is_upgrade = for_upgrade or getattr(s, "for_upgrade", False)
         action     = "REMOVE (purge) the worst card" if is_purge else \
@@ -425,11 +467,15 @@ class LLMMetaAgent(BaseMetaAgent):
         )
         prompt = (
             f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
             f"GRID SELECTION — {action}:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(cards)-1}>}}'
         )
         idx = self._ask_index(prompt, len(cards), fallback=0)
-        self.log.info("LLM choose_grid (%s): %d (%s)", action.split()[0], idx, names[idx])
+        chosen_name  = names[idx] if idx < len(names) else f"#{idx}"
+        action_label = "PURGE" if is_purge else "SMITH" if is_upgrade else "DUPE"
+        self._log(f"F{floor}  {action_label}  '{chosen_name}'")
+        self.log.info("LLM choose_grid (%s): %d (%s)", action.split()[0], idx, chosen_name)
         return idx
 
     def choose_hand(self, game) -> int:
@@ -446,9 +492,10 @@ class LLMMetaAgent(BaseMetaAgent):
         )
         prompt = (
             f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
             f"HAND SELECT — choose the best card from your hand:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(cards)-1}>}}'
         )
         idx = self._ask_index(prompt, len(cards), fallback=0)
-        self.log.info("LLM choose_hand: %d (%s)", idx, names[idx])
+        self.log.info("LLM choose_hand: %d (%s)", idx, names[idx] if idx < len(names) else "?")
         return idx

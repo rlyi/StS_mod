@@ -61,7 +61,7 @@ class SlayTheSpireAI:
         # ── Шаг 1: signal_ready() ДО загрузки тяжёлых модулей ─────────
         # CommunicationMod даёт только 10 секунд. Успеваем до таймаута.
         self.coordinator.register_state_change_callback(self._handle_loading)
-        self.coordinator.register_out_of_game_callback(lambda: StateAction())
+        self.coordinator.register_out_of_game_callback(self._handle_out_of_game)
         self.coordinator.register_command_error_callback(self._handle_error)
         self.coordinator.signal_ready()
         log.info("signal_ready отправлен — загружаем агентов...")
@@ -78,6 +78,11 @@ class SlayTheSpireAI:
         log.info("Агенты готовы. Ожидание игры...")
 
     # ── Callbacks ────────────────────────────────────────────────────
+
+    def _handle_out_of_game(self):
+        if self._meta_agent is not None:
+            self._meta_agent.reset_run()
+        return StateAction()
 
     def _handle_loading(self, game):
         """Пока агенты грузятся — просто опрашиваем состояние."""

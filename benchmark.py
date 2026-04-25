@@ -46,7 +46,7 @@ from spirecomm.communication.action import (
 from spirecomm.spire.character import PlayerClass
 
 # ── Конфигурация (менять перед каждым запуском) ───────────────────────────
-AGENT         = "forest"          # "random" | "tree" | "forest" | "llm"
+AGENT         = "random"          # "random" | "tree" | "forest" | "llm"
 SEEDS         = [42, 123, 456, 537]    # список сидов
 RUNS_PER_SEED = 25                # забегов на каждый сид
 RESULTS_FILE  = os.path.join(_ROOT, "data", f"benchmark_{AGENT}.json")
@@ -191,6 +191,7 @@ class BenchmarkRunner:
 
         log.info("Старт: агент=%-6s сид=%-5d забег=%d/%d",
                  self._agent_name, self._seed, self._run_num + 1, RUNS_PER_SEED)
+        self._meta_agent.reset_run()
         self._last_floor  = 0
         self._last_hp     = 0
         self._last_max_hp = 0

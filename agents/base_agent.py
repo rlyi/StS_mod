@@ -43,6 +43,10 @@ class BaseMetaAgent(ABC):
     def choose_boss_relic(self, game) -> int:
         """Выбрать реликт босса. Возвращает индекс."""
 
+    def reset_run(self) -> None:
+        """Сбросить внутреннее состояние при начале нового рана. Переопределяется подклассом."""
+        pass
+
     def choose_shop(self, game) -> int:
         """Выбрать покупку в магазине. -1 = выйти (по умолчанию пропускаем)."""
         return -1
@@ -218,6 +222,7 @@ class BaseMetaAgent(ABC):
             return ChooseAction(idx)
 
         elif screen in ("GAME_OVER", "COMPLETE"):
+            self.reset_run()
             return ProceedAction()
 
         else:
