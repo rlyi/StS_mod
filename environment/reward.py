@@ -10,11 +10,11 @@ def calculate_reward(prev_game, curr_game) -> float:
 
     Схема наград:
       +2.0 + 1.0×hp_pct  победа (все враги убиты + бонус за оставшийся HP)
-      +0.5               убийство врага
+      +1.0               убийство врага
       +0.01              за единицу реального урона (без overkill)
       -2.0               смерть игрока
       -0.03              за единицу полученного урона
-      -0.01              штраф за каждый ход
+      -0.15              штраф за каждый ход (анти-столлинг)
       +10.0              победа над боссом Акта 1
     """
     reward = REWARD_TURN_PENALTY
@@ -37,7 +37,8 @@ def calculate_reward(prev_game, curr_game) -> float:
                  and getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)]
 
     for prev_m in prev_live:
-        curr_m = _find_monster(curr_game.monsters, prev_m.name)
+        curr_m = _find_monster(curr_game.monsters, prev_m.name,
+                               getattr(prev_m, "monster_index", None))
         if curr_m is None or curr_m.current_hp <= 0:
             reward += REWARD_KILL_ENEMY
         else:
@@ -58,7 +59,11 @@ def calculate_reward(prev_game, curr_game) -> float:
     return reward
 
 
-def _find_monster(monsters, name: str):
+def _find_monster(monsters, name: str, monster_index=None):
+    if monster_index is not None:
+        for m in monsters:
+            if m is not None and getattr(m, "monster_index", None) == monster_index:
+                return m
     for m in monsters:
         if m is not None and m.name == name:
             return m

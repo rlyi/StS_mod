@@ -48,7 +48,7 @@ class CombatEnv(gym.Env):
     def __init__(self):
         super().__init__()
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(OBS_SIZE,), dtype=np.float32
+            low=-1.0, high=1.0, shape=(OBS_SIZE,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(ACTION_SIZE)
 
