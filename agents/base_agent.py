@@ -2,9 +2,8 @@ import random
 import logging
 from abc import ABC, abstractmethod
 
-from spirecomm.communication.action import Action, ProceedAction, ChooseAction
+from spirecomm.communication.action import ProceedAction, ChooseAction, Action
 
-# CARD_REWARD: skip требует команду "skip", а не "proceed"
 _SkipAction = Action(command="skip")
 
 
@@ -22,6 +21,9 @@ class BaseMetaAgent(ABC):
     Вся механика экранов (HAND_SELECT, GRID, BOSS_REWARD и т.д.) реализована
     здесь в act() и одинакова для всех агентов.
     """
+
+    def __init__(self):
+        self._card_skipped = False
 
     @abstractmethod
     def choose_card(self, game) -> int:
@@ -45,7 +47,7 @@ class BaseMetaAgent(ABC):
 
     def reset_run(self) -> None:
         """Сбросить внутреннее состояние при начале нового рана. Переопределяется подклассом."""
-        pass
+        self._card_skipped = False
 
     def choose_shop(self, game) -> int:
         """Выбрать покупку в магазине. -1 = выйти (по умолчанию пропускаем)."""
@@ -93,10 +95,15 @@ class BaseMetaAgent(ABC):
             card_names = [getattr(c, "name", str(c)) for c in cards]
             idx = self.choose_card(game)
             if idx < 0:
+                self._card_skipped = True
                 log.info("[CARD   ] этаж=%-2s HP=%-7s варианты=%s → SKIP",
                          floor, hp_str, card_names)
+                # proceed_available=True когда зашли через COMBAT_REWARD, иначе skip
+                if getattr(game, "proceed_available", False):
+                    return ProceedAction()
                 return _SkipAction
             else:
+                self._card_skipped = False
                 picked = card_names[idx] if idx < len(card_names) else f"#{idx}"
                 log.info("[CARD   ] этаж=%-2s HP=%-7s варианты=%s → '%s'",
                          floor, hp_str, card_names, picked)
@@ -157,11 +164,16 @@ class BaseMetaAgent(ABC):
                     if any(getattr(p, "potion_id", "Potion Slot") == "Potion Slot"
                            for p in potions):
                         return ChooseAction(i)
-                    continue  # слоты полны — пропускаем зелье
-                if rt in ("CARD", "GOLD", "RELIC", "RELIC_AND_GOLD",
+                    continue
+                if rt == "CARD":
+                    if getattr(self, "_card_skipped", False):
+                        continue  # уже скипнули на CARD_REWARD — не заходим снова
+                    return ChooseAction(i)
+                if rt in ("GOLD", "RELIC", "RELIC_AND_GOLD",
                           "EMERALD_KEY", "SAPPHIRE_KEY", "STOLEN_GOLD"):
                     return ChooseAction(i)
-            return ProceedAction()  # все награды собраны
+            self._card_skipped = False
+            return ProceedAction()
 
         elif screen in ("SHOP_SCREEN", "SHOP_ROOM"):
             idx = self.choose_shop(game)

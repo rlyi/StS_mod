@@ -1,6 +1,5 @@
 import json
 import logging
-import random
 import re
 import requests
 
@@ -9,8 +8,8 @@ from agents.base_agent import BaseMetaAgent
 LM_STUDIO_URL = "http://localhost:1234/v1/chat/completions"
 LM_MODEL      = "qwen/qwen3-8b"
 
-_MAX_TOKENS  = 128
-_MAX_HISTORY = 50  # записей истории (хватит на полный Act 1 с запасом)
+_MAX_TOKENS  = 256
+_MAX_HISTORY = 50
 
 _SYSTEM = """You are an expert Slay the Spire player controlling an Ironclad, Act 1 (floors 1-17), Ascension 0.
 Respond ONLY with a valid JSON object, no extra text.
@@ -28,25 +27,40 @@ MAP NODES (choose your path wisely):
 - $ = Shop: buy cards/relics/potions, can remove a card from deck (very valuable)
 - T = Treasure: free chest, no fight
 
-IRONCLAD STRATEGY:
-- Early (floors 1-6): prioritize damage and deck consistency, grab Block if taking lots of damage
-- Mid (floors 7-12): look for synergies (Strength scaling, Block generation, draw)
-- Pre-boss (floors 13-17): save HP for boss, prefer REST over SMITH if below 50% HP
-- Best cards to upgrade: Bash, Shrug It Off, Sentinel, Dropkick, Whirlwind
-- Cards to avoid adding: Clumsy, Doubt, Pain, Shame (curses), Normality, Parasite
-- Skip card rewards if your deck is already good — more cards = slower cycling
-- Removing Strike/Defend via Shop purge is extremely valuable for consistency"""
+HP MANAGEMENT (highest priority — dead = game over):
+- HP < 25%: EMERGENCY — take REST over everything, never fight Elites, avoid risky events
+- HP < 50%: prefer REST over SMITH, avoid Elites unless you must
+- HP > 60%: Elites are worth fighting (relic reward), SMITH is fine at rest
+- Arriving at the boss with high HP is more important than a slightly better deck
 
-# /no_think в конце user-сообщения отключает reasoning у Qwen3
+PATH SELECTION:
+- T (Treasure): always take — free relic, no fight
+- ? (Unknown): usually safe and rewarding — events often give free gold, cards, or relics
+- R (Rest Site): prioritize when HP < 60%; look ahead — if rest is available soon, you can skip now
+- E (Elite): only if HP > 60%; relics are powerful but the fight is dangerous
+- $ (Shop): visit if you have 75+ gold — removing a Strike or Defend is worth more than most cards
+- M (Monster): standard choice, always fine
+
+REST SITE:
+- REST if HP < 60% (heals 30% of max HP — e.g. 80 max HP → +24 HP)
+- SMITH if HP > 60% — best upgrades: Bash, Shrug It Off, Sentinel, Inflame, Dropkick
+
+DECK BUILDING:
+- Keep deck small (under 12 cards) — smaller deck cycles faster and is more consistent
+- Before floor 7: almost always take a card — deck is too small to be picky
+- After floor 7: only add cards that clearly improve your strategy; skip mediocre cards
+- Remove Strikes and Defends via Shop whenever possible — they dilute your deck
+- Never add curses or bad cards: Clumsy, Doubt, Pain, Shame, Normality, Parasite
+- Good cards to prioritize: Shrug It Off, Pommel Strike, Inflame, Dropkick, Rampage, Carnage
+- Best upgrades: Bash (+dmg +vulnerable), Shrug It Off (+block), Inflame (+strength), Sentinel (+block)"""
+
 _NO_THINK = " /no_think"
 
 # ── Описания карт Ironclad ────────────────────────────────────────────
 _CARD_DESC = {
-    # Стартовые
     "Strike_R":         "Deal 6 damage.",
     "Defend_R":         "Gain 5 Block.",
     "Bash":             "Deal 8 damage. Apply 2 Vulnerable.",
-    # Обычные атаки
     "Anger":            "Deal 6 damage. Add a copy to your discard pile.",
     "Body Slam":        "Deal damage equal to your current Block.",
     "Clash":            "Can only be played if every card in hand is an Attack. Deal 14 damage.",
@@ -61,14 +75,12 @@ _CARD_DESC = {
     "Thunderclap":      "Deal 4 damage to ALL enemies. Apply 1 Vulnerable to ALL.",
     "Twin Strike":      "Deal 5 damage twice.",
     "Wild Strike":      "Deal 12 damage. Shuffle a Wound into your draw pile.",
-    # Обычные скиллы
     "Armaments":        "Gain 5 Block. Upgrade a card in your hand for the rest of combat.",
     "Flex":             "Gain 2 Strength. At end of turn lose 2 Strength.",
     "Havoc":            "Play the top card of your draw pile and Exhaust it.",
     "Shrug It Off":     "Gain 8 Block. Draw 1 card.",
     "True Grit":        "Gain 7 Block. Exhaust a random card in your hand.",
     "Warcry":           "Draw 2 cards. Put 1 card from your hand on top of your draw pile. Exhaust.",
-    # Необычные атаки
     "Blood for Blood":  "Costs 1 less Energy for each time you lost HP this combat. Deal 18 damage.",
     "Carnage":          "Ethereal. Deal 20 damage.",
     "Dropkick":         "Deal 5 damage. If enemy is Vulnerable: gain 1 Energy and draw 1 card.",
@@ -80,7 +92,6 @@ _CARD_DESC = {
     "Sever Soul":       "Exhaust all non-Attack cards in hand. Deal 16 damage.",
     "Uppercut":         "Deal 13 damage. Apply 1 Weak and 1 Vulnerable.",
     "Whirlwind":        "Deal 5 damage to ALL enemies X times (X = Energy spent).",
-    # Необычные скиллы/пауэры
     "Battle Trance":    "Draw 3 cards. You cannot draw additional cards this turn. Exhaust.",
     "Bloodletting":     "Lose 3 HP. Gain 2 Energy.",
     "Burning Pact":     "Exhaust 1 card. Draw 2 cards.",
@@ -105,14 +116,12 @@ _CARD_DESC = {
     "Sentinel":         "Gain 5 Block. If Exhausted gain 2 Energy.",
     "Shockwave":        "Apply 3 Weak and 3 Vulnerable to ALL enemies. Exhaust.",
     "Spot Weakness":    "If enemy intends to attack gain 3 Strength.",
-    # Редкие атаки
     "Bludgeon":         "Deal 32 damage.",
     "Choke":            "Deal 12 damage. Whenever you play a card this turn enemy loses 3 Strength.",
     "Feed":             "Deal 10 damage. If fatal permanently gain 3 max HP. Exhaust.",
     "Fiend Fire":       "Exhaust your hand. Deal 7 damage for each card exhausted. Exhaust.",
     "Immolate":         "Deal 21 damage to ALL enemies. Add a Burn to your discard pile.",
     "Reaper":           "Deal 4 damage to ALL enemies. Heal HP equal to unblocked damage dealt.",
-    # Редкие пауэры/скиллы
     "Barricade":        "Power. Block is no longer removed at start of your turn.",
     "Berserk":          "Power. Gain 1 Vulnerability. At start of each turn gain 1 Energy.",
     "Brutality":        "Power. At start of each turn lose 1 HP and draw 1 card.",
@@ -125,7 +134,6 @@ _CARD_DESC = {
     "Limit Break":      "Double your Strength. Exhaust.",
     "Offering":         "Lose 6 HP. Gain 2 Energy. Draw 3 cards. Exhaust.",
     "Champion":         "Power. Apply 1 Weak and Vulnerable to ALL enemies at start of each turn.",
-    # Статусы / проклятия
     "Wound":            "STATUS. Unplayable.",
     "Burn":             "STATUS. Unplayable. At end of your turn take 2 damage.",
     "Dazed":            "STATUS. Unplayable. Ethereal.",
@@ -152,9 +160,9 @@ def _card_info(name: str) -> str:
     suffix = " (upgraded)" if upgraded and desc else ""
     return f"{desc}{suffix}" if desc else ""
 
+
 _JSON_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
 
-# JSON schemas для structured output
 _SCHEMA_INT = {
     "type": "json_schema",
     "json_schema": {
@@ -181,13 +189,54 @@ _SCHEMA_STR = {
 }
 
 _NODE_DESC = {
-    "M": "Monster fight",
-    "?": "Unknown room (event or treasure)",
-    "E": "Elite fight (harder enemy, better loot)",
-    "R": "Rest Site (heal or upgrade a card)",
-    "$": "Shop (buy cards, relics, potions)",
-    "T": "Treasure chest",
+    "M": "Monster",
+    "?": "Unknown (event/treasure)",
+    "E": "Elite",
+    "R": "Rest Site",
+    "$": "Shop",
+    "T": "Treasure",
+    "B": "Boss",
 }
+
+
+def _card_info(name: str) -> str:
+    base = name.split("+")[0].strip()
+    upgraded = "+" in name
+    desc = _CARD_DESC.get(base, "")
+    suffix = " (upgraded)" if upgraded and desc else ""
+    return f"{desc}{suffix}" if desc else ""
+
+
+def _node_sym(node) -> str:
+    return str(getattr(node, "symbol", "?")).upper()
+
+
+def _path_ahead(node) -> str:
+    """BFS от одного узла — показывает все доступные узлы по этажам до конца акта."""
+    lines = []
+    seen: set = set()
+    current = [node]
+    depth = 0
+    while current:
+        depth += 1
+        next_nodes = []
+        syms = []
+        for n in current:
+            key = (getattr(n, "x", id(n)), getattr(n, "y", id(n)))
+            if key in seen:
+                continue
+            seen.add(key)
+            for child in (getattr(n, "children", []) or []):
+                ck = (getattr(child, "x", id(child)), getattr(child, "y", id(child)))
+                if ck not in seen:
+                    csym  = _node_sym(child)
+                    cdesc = _NODE_DESC.get(csym, csym)
+                    syms.append(f"{cdesc}[{csym}]")
+                    next_nodes.append(child)
+        if syms:
+            lines.append(f"  +{depth}: {', '.join(syms)}")
+        current = next_nodes
+    return "\n".join(lines) if lines else "  (no further nodes)"
 
 
 def _ctx(game) -> str:
@@ -223,8 +272,6 @@ class LLMMetaAgent(BaseMetaAgent):
         self.log     = logging.getLogger("LLMMetaAgent")
         self._history: list[str] = []
 
-    # ── История рана ─────────────────────────────────────────────────
-
     def reset_run(self) -> None:
         self._history.clear()
         self.log.info("LLMMetaAgent: история рана сброшена")
@@ -237,8 +284,6 @@ class LLMMetaAgent(BaseMetaAgent):
             return ""
         lines = self._history[-_MAX_HISTORY:]
         return "RUN HISTORY (your decisions this run):\n" + "\n".join(f"  {l}" for l in lines) + "\n\n"
-
-    # ── LLM call ─────────────────────────────────────────────────────
 
     def _call(self, user_msg: str, schema=_SCHEMA_INT) -> dict:
         payload = {
@@ -263,16 +308,10 @@ class LLMMetaAgent(BaseMetaAgent):
                 raise ValueError(f"No JSON in LLM response: {text!r}")
             return json.loads(m.group())
 
-    def _ask_index(self, prompt: str, n: int, fallback: int = 0) -> int:
-        try:
-            data = self._call(prompt)
-            idx  = int(data.get("choice", fallback))
-            return max(0, min(idx, n - 1))
-        except Exception as e:
-            self.log.warning("LLM index error: %s", e)
-            return fallback
-
-    # ── Decisions ────────────────────────────────────────────────────
+    def _ask_index(self, prompt: str, n: int) -> int:
+        data = self._call(prompt)
+        idx  = int(data.get("choice", 0))
+        return max(0, min(idx, n - 1))
 
     def choose_card(self, game) -> int:
         cards = getattr(getattr(game, "screen", None), "cards", [])
@@ -291,20 +330,16 @@ class LLMMetaAgent(BaseMetaAgent):
             f"CARD REWARD — pick the best card for your deck, or skip:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(cards)-1} or -1 to skip>}}'
         )
-        try:
-            data   = self._call(prompt)
-            choice = int(data.get("choice", 0))
-            if choice < 0:
-                self._log(f"F{floor}  CARD  SKIP  [options: {', '.join(names)}]")
-                self.log.info("LLM choose_card: SKIP")
-                return -1
-            choice = max(0, min(choice, len(cards) - 1))
-            self._log(f"F{floor}  CARD  took '{names[choice]}'  [options: {', '.join(names)}]")
-            self.log.info("LLM choose_card: %d (%s)", choice, names[choice])
-            return choice
-        except Exception as e:
-            self.log.warning("LLM card error: %s", e)
-            return random.randrange(len(cards))
+        data   = self._call(prompt)
+        choice = int(data.get("choice", 0))
+        if choice < 0:
+            self._log(f"F{floor}  CARD  SKIP  [options: {', '.join(names)}]")
+            self.log.info("LLM choose_card: SKIP")
+            return -1
+        choice = max(0, min(choice, len(cards) - 1))
+        self._log(f"F{floor}  CARD  took '{names[choice]}'  [options: {', '.join(names)}]")
+        self.log.info("LLM choose_card: %d (%s)", choice, names[choice])
+        return choice
 
     def choose_path(self, game) -> int:
         nodes = getattr(getattr(game, "screen", None), "next_nodes", [])
@@ -312,17 +347,24 @@ class LLMMetaAgent(BaseMetaAgent):
             return 0
 
         floor   = getattr(game, "floor", "?")
-        symbols = [str(getattr(n, "symbol", "?")).upper() for n in nodes]
+        symbols = [_node_sym(n) for n in nodes]
         opts    = "\n".join(
             f"  {i}: {_NODE_DESC.get(s, s)} [{s}]" for i, s in enumerate(symbols)
         )
+        map_sections = []
+        for i, node in enumerate(nodes):
+            sym  = _node_sym(node)
+            desc = _NODE_DESC.get(sym, sym)
+            map_sections.append(f"Choice {i}: {desc}[{sym}]\n{_path_ahead(node)}")
+        map_context = "\n\n".join(map_sections)
         prompt = (
             f"{_ctx(game)}\n\n"
             f"{self._history_block()}"
             f"MAP — choose your next node:\n{opts}\n\n"
+            f"FULL MAP AHEAD (floors reachable from each choice):\n{map_context}\n\n"
             f'Return JSON: {{"choice": <0-{len(nodes)-1}>}}'
         )
-        idx = self._ask_index(prompt, len(nodes), fallback=random.randrange(len(nodes)))
+        idx = self._ask_index(prompt, len(nodes))
         chosen = symbols[idx] if idx < len(symbols) else "?"
         self._log(
             f"F{floor}  MAP   chose {_NODE_DESC.get(chosen, chosen)} [{chosen}]"
@@ -343,18 +385,12 @@ class LLMMetaAgent(BaseMetaAgent):
             f"  SMITH: permanently upgrade one card in your deck\n\n"
             f'Return JSON: {{"choice": "REST" or "SMITH"}}'
         )
-        fallback = "REST" if hp_pct < 0.6 else "SMITH"
-        try:
-            data   = self._call(prompt, schema=_SCHEMA_STR)
-            choice = str(data.get("choice", fallback)).upper().strip()
-            result = choice if choice in ("REST", "SMITH") else fallback
-            self._log(f"F{floor}  REST  {result}  [HP {game.current_hp}/{game.max_hp}]")
-            self.log.info("LLM choose_rest: %s", result)
-            return result
-        except Exception as e:
-            self.log.warning("LLM rest error: %s", e)
-            self._log(f"F{floor}  REST  {fallback} (fallback)  [HP {game.current_hp}/{game.max_hp}]")
-            return fallback
+        data   = self._call(prompt, schema=_SCHEMA_STR)
+        choice = str(data.get("choice", "REST")).upper().strip()
+        result = choice if choice in ("REST", "SMITH") else ("REST" if hp_pct < 0.6 else "SMITH")
+        self._log(f"F{floor}  REST  {result}  [HP {game.current_hp}/{game.max_hp}]")
+        self.log.info("LLM choose_rest: %s", result)
+        return result
 
     def choose_event(self, game) -> int:
         s       = getattr(game, "screen", None)
@@ -372,7 +408,7 @@ class LLMMetaAgent(BaseMetaAgent):
             f"EVENT: {event_name}\nOptions:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(options)-1}>}}'
         )
-        idx = self._ask_index(prompt, len(options), fallback=len(options) - 1)
+        idx = self._ask_index(prompt, len(options))
         chosen_text = opt_texts[idx][:50] if idx < len(opt_texts) else f"#{idx}"
         self._log(f"F{floor}  EVENT '{event_name}' → '{chosen_text}'")
         self.log.info("LLM choose_event '%s': %d", event_name, idx)
@@ -392,13 +428,12 @@ class LLMMetaAgent(BaseMetaAgent):
             f"BOSS RELIC — choose one (these are powerful relics that shape your entire strategy):\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(relics)-1}>}}'
         )
-        idx = self._ask_index(prompt, len(relics), fallback=0)
+        idx = self._ask_index(prompt, len(relics))
         self._log(f"F{floor}  BOSS  chose '{names[idx]}'  [options: {', '.join(names)}]")
         self.log.info("LLM choose_boss_relic: %d (%s)", idx, names[idx])
         return idx
 
     def choose_shop(self, game) -> int:
-        """Возвращает индекс в объединённом списке [cards | relics | potions] или -1 = выйти."""
         s       = getattr(game, "screen", None)
         gold    = getattr(game, "gold", 0)
         floor   = getattr(game, "floor", "?")
@@ -425,29 +460,24 @@ class LLMMetaAgent(BaseMetaAgent):
             f"SHOP — you have {gold} gold. Items:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(all_items)-1} or -1 to leave shop>}}'
         )
-        try:
-            data   = self._call(prompt)
-            choice = int(data.get("choice", -1))
-            if choice < 0:
-                self._log(f"F{floor}  SHOP  left  [{gold}g remaining]")
-                self.log.info("LLM choose_shop: leave")
-                return -1
-            choice = max(0, min(choice, len(all_items) - 1))
-            name   = getattr(all_items[choice], "name", str(all_items[choice]))
-            price  = getattr(all_items[choice], "price", 0)
-            if isinstance(price, int) and price > gold:
-                self._log(f"F{floor}  SHOP  left ('{name}' too expensive: {price}g > {gold}g)")
-                self.log.info("LLM choose_shop: %s too expensive (%d > %d) — leave", name, price, gold)
-                return -1
-            self._log(f"F{floor}  SHOP  bought '{name}' {price}g  [{gold - price}g left]")
-            self.log.info("LLM choose_shop: %d (%s)", choice, name)
-            return choice
-        except Exception as e:
-            self.log.warning("LLM shop error: %s", e)
+        data   = self._call(prompt)
+        choice = int(data.get("choice", -1))
+        if choice < 0:
+            self._log(f"F{floor}  SHOP  left  [{gold}g remaining]")
+            self.log.info("LLM choose_shop: leave")
             return -1
+        choice = max(0, min(choice, len(all_items) - 1))
+        name   = getattr(all_items[choice], "name", str(all_items[choice]))
+        price  = getattr(all_items[choice], "price", 0)
+        if isinstance(price, int) and price > gold:
+            self._log(f"F{floor}  SHOP  left ('{name}' too expensive: {price}g > {gold}g)")
+            self.log.info("LLM choose_shop: %s too expensive (%d > %d) — leave", name, price, gold)
+            return -1
+        self._log(f"F{floor}  SHOP  bought '{name}' {price}g  [{gold - price}g left]")
+        self.log.info("LLM choose_shop: %d (%s)", choice, name)
+        return choice
 
     def choose_grid(self, game, for_upgrade: bool = False) -> int:
-        """Выбор карты в GRID (апгрейд, удаление, или дублирование)."""
         s      = getattr(game, "screen", None)
         cards  = getattr(s, "cards", [])
         if not cards:
@@ -471,7 +501,7 @@ class LLMMetaAgent(BaseMetaAgent):
             f"GRID SELECTION — {action}:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(cards)-1}>}}'
         )
-        idx = self._ask_index(prompt, len(cards), fallback=0)
+        idx = self._ask_index(prompt, len(cards))
         chosen_name  = names[idx] if idx < len(names) else f"#{idx}"
         action_label = "PURGE" if is_purge else "SMITH" if is_upgrade else "DUPE"
         self._log(f"F{floor}  {action_label}  '{chosen_name}'")
@@ -479,7 +509,6 @@ class LLMMetaAgent(BaseMetaAgent):
         return idx
 
     def choose_hand(self, game) -> int:
-        """Выбор карты из руки (HAND_SELECT — для Armaments, Dual Wield и т.п.)."""
         s     = getattr(game, "screen", None)
         cards = getattr(s, "cards", [])
         if not cards:
@@ -496,6 +525,6 @@ class LLMMetaAgent(BaseMetaAgent):
             f"HAND SELECT — choose the best card from your hand:\n{opts}\n\n"
             f'Return JSON: {{"choice": <0-{len(cards)-1}>}}'
         )
-        idx = self._ask_index(prompt, len(cards), fallback=0)
+        idx = self._ask_index(prompt, len(cards))
         self.log.info("LLM choose_hand: %d (%s)", idx, names[idx] if idx < len(names) else "?")
         return idx

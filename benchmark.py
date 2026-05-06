@@ -46,9 +46,20 @@ from spirecomm.communication.action import (
 from spirecomm.spire.character import PlayerClass
 
 # ── Конфигурация (менять перед каждым запуском) ───────────────────────────
-AGENT         = "random"          # "random" | "tree" | "forest" | "llm"
-SEEDS         = [42, 123, 456, 537]    # список сидов
-RUNS_PER_SEED = 25                # забегов на каждый сид
+AGENT         = "llm"          # "random" | "tree" | "forest" | "llm"
+SEEDS         = [
+    101, 202, 303, 404, 505, 606, 707, 808, 909, 1010,
+    1111, 1212, 1313, 1414, 1515, 1616, 1717, 1818, 1919, 2020,
+    2121, 2222, 2323, 2424, 2525, 2626, 2727, 2828, 2929, 3030,
+    3131, 3232, 3333, 3434, 3535, 3636, 3737, 3838, 3939, 4040,
+    4141, 4242, 4343, 4444, 4545, 4646, 4747, 4848, 4949, 5050,
+    5151, 5252, 5353, 5454, 5555, 5656, 5757, 5858, 5959, 6060,
+    6161, 6262, 6363, 6464, 6565, 6666, 6767, 6868, 6969, 7070,
+    7171, 7272, 7373, 7474, 7575, 7676, 7777, 7878, 7979, 8080,
+    8181, 8282, 8383, 8484, 8585, 8686, 8787, 8888, 8989, 9090,
+    9191, 9292, 9393, 9494, 9595, 9696, 9797, 9898, 9999, 10000,
+]
+RUNS_PER_SEED = 1                 # по 1 забегу на каждый сид
 RESULTS_FILE  = os.path.join(_ROOT, "data", f"benchmark_{AGENT}.json")
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -85,10 +96,13 @@ class BenchmarkRunner:
         self._run_num   = 0   # номер текущего забега внутри seed × agent
 
         # Текущий забег — отслеживаем состояние для записи результата
-        self._last_floor  = 0
-        self._last_hp     = 0
-        self._last_max_hp = 0
-        self._error_count = 0
+        self._last_floor    = 0
+        self._last_hp       = 0
+        self._last_max_hp   = 0
+        self._error_count   = 0
+        self._combat_wins   = 0
+        self._combat_total  = 0
+        self._hp_boss_entry = None  # HP при входе на floor 16
 
         # Результаты
         self._results: list[dict] = []
@@ -151,24 +165,30 @@ class BenchmarkRunner:
     # ── Запись результата и переход к следующему ──────────────────────────
 
     def _record_and_advance(self, outcome: str):
+        # победа = прошёл босса акта 1
+        win = self._last_floor >= 17
         result = {
-            "agent":   self._agent_name,
-            "seed":    self._seed,
-            "run":     self._run_num,
-            "outcome": outcome,
-            "floor":   self._last_floor,
-            "hp":      self._last_hp,
-            "max_hp":  self._last_max_hp,
-            "ts":      datetime.datetime.now().isoformat(),
+            "agent":          self._agent_name,
+            "seed":           self._seed,
+            "run":            self._run_num,
+            "win":            win,
+            "floor":          self._last_floor,
+            "combat_wins":    self._combat_wins,
+            "combat_total":   self._combat_total,
+            "hp_boss_entry":  self._hp_boss_entry,
+            "max_hp":         self._last_max_hp,
+            "ts":             datetime.datetime.now().isoformat(),
         }
         self._results.append(result)
         os.makedirs(os.path.dirname(RESULTS_FILE), exist_ok=True)
         with open(RESULTS_FILE, "w", encoding="utf-8") as f:
             json.dump(self._results, f, indent=2, ensure_ascii=False)
 
-        log.info("РЕЗУЛЬТАТ | агент=%-6s сид=%-5d забег=%2d/%d | %-4s этаж=%-2d HP=%d/%d",
-                 self._agent_name, self._seed, self._run_num + 1, RUNS_PER_SEED,
-                 outcome.upper(), self._last_floor, self._last_hp, self._last_max_hp)
+        log.info("РЕЗУЛЬТАТ | агент=%-6s сид=%-5d | %s этаж=%-2d боёв=%d/%d HP_boss=%s",
+                 self._agent_name, self._seed,
+                 "WIN " if win else "LOSE",
+                 self._last_floor, self._combat_wins, self._combat_total,
+                 str(self._hp_boss_entry) if self._hp_boss_entry else "-")
 
         # Переходим к следующей позиции
         self._run_num += 1
@@ -187,15 +207,18 @@ class BenchmarkRunner:
         if self._is_finished():
             log.info("БЕНЧМАРК ЗАВЕРШЁН! Всего: %d результатов", len(self._results))
             self._print_summary()
-            return StateAction()
+            sys.exit(0)
 
         log.info("Старт: агент=%-6s сид=%-5d забег=%d/%d",
                  self._agent_name, self._seed, self._run_num + 1, RUNS_PER_SEED)
         self._meta_agent.reset_run()
-        self._last_floor  = 0
-        self._last_hp     = 0
-        self._last_max_hp = 0
-        self._error_count = 0
+        self._last_floor    = 0
+        self._last_hp       = 0
+        self._last_max_hp   = 0
+        self._error_count   = 0
+        self._combat_wins   = 0
+        self._combat_total  = 0
+        self._hp_boss_entry = None
         return StartGameAction(PlayerClass.IRONCLAD, ascension_level=0, seed=self._seed)
 
     def _handle_state(self, game):
@@ -212,11 +235,21 @@ class BenchmarkRunner:
         if player:
             self._last_hp     = player.current_hp
             self._last_max_hp = player.max_hp
+            # Фиксируем HP при входе на этаж босса
+            if floor == 16 and self._hp_boss_entry is None:
+                self._hp_boss_entry = player.current_hp
+
+        # Считаем победы в боях через COMBAT_REWARD
+        if screen == "COMBAT_REWARD":
+            self._combat_wins  += 1
+            self._combat_total += 1
 
         # ── Конец забега ─────────────────────────────────────────────
         if screen == "GAME_OVER":
             victory = getattr(getattr(game, "screen", None), "victory", False)
-            self._record_and_advance("win" if victory else "lose")
+            if not victory:
+                self._combat_total += 1  # последний бой — поражение
+            self._record_and_advance("lose")
             return ProceedAction()
 
         if screen == "COMPLETE":
@@ -255,29 +288,35 @@ class BenchmarkRunner:
     # ── Итоговая таблица ──────────────────────────────────────────────────
 
     def _print_summary(self):
-        stats = defaultdict(lambda: {"wins": 0, "total": 0, "floors": [], "hp_pct": []})
+        stats = defaultdict(lambda: {
+            "wins": 0, "total": 0, "floors": [],
+            "combat_wins": 0, "combat_total": 0, "hp_boss": [],
+        })
         for r in self._results:
             s = stats[r["agent"]]
             s["total"] += 1
             s["floors"].append(r["floor"])
-            if r["outcome"] == "win":
+            if r.get("win"):
                 s["wins"] += 1
-            if r["max_hp"] > 0:
-                s["hp_pct"].append(r["hp"] / r["max_hp"])
+            s["combat_wins"]  += r.get("combat_wins", 0)
+            s["combat_total"] += r.get("combat_total", 0)
+            if r.get("hp_boss_entry") is not None:
+                s["hp_boss"].append(r["hp_boss_entry"])
 
-        log.info("=" * 60)
-        log.info("%-8s | winrate | avg_floor | avg_hp_pct | runs", "agent")
-        log.info("-" * 60)
+        log.info("=" * 75)
+        log.info("%-8s | winrate | avg_floor | combat_wr | avg_hp_boss | runs", "agent")
+        log.info("-" * 75)
         for agent in BENCHMARK_AGENTS:
             s = stats[agent]
             if s["total"] == 0:
                 continue
-            winrate   = s["wins"] / s["total"] * 100
-            avg_floor = sum(s["floors"]) / len(s["floors"])
-            avg_hp    = sum(s["hp_pct"]) / len(s["hp_pct"]) * 100 if s["hp_pct"] else 0
-            log.info("%-8s | %5.1f%%  | %9.1f | %10.1f%% | %d",
-                     agent, winrate, avg_floor, avg_hp, s["total"])
-        log.info("=" * 60)
+            winrate    = s["wins"] / s["total"] * 100
+            avg_floor  = sum(s["floors"]) / len(s["floors"])
+            combat_wr  = s["combat_wins"] / s["combat_total"] * 100 if s["combat_total"] else 0
+            avg_hp_boss = sum(s["hp_boss"]) / len(s["hp_boss"]) if s["hp_boss"] else 0
+            log.info("%-8s | %5.1f%%  | %9.1f | %9.1f%% | %11.1f | %d",
+                     agent, winrate, avg_floor, combat_wr, avg_hp_boss, s["total"])
+        log.info("=" * 75)
 
     def run(self):
         self._coordinator.run()
