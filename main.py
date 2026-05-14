@@ -40,7 +40,8 @@ from agents import make_meta_agent as _load_meta_agent
 
 # spirecomm импортируется быстро — можно сразу
 from spirecomm.communication.coordinator import Coordinator
-from spirecomm.communication.action import StateAction, ProceedAction, EndTurnAction
+from spirecomm.communication.action import StateAction, ProceedAction, EndTurnAction, StartGameAction
+from spirecomm.spire.character import PlayerClass
 
 
 def _screen_str(game) -> str:
@@ -82,7 +83,9 @@ class SlayTheSpireAI:
     def _handle_out_of_game(self):
         if self._meta_agent is not None:
             self._meta_agent.reset_run()
-        return StateAction()
+        from config import CHARACTER, SEED
+        player_class = PlayerClass[CHARACTER]
+        return StartGameAction(player_class, ascension_level=0, seed=SEED)
 
     def _handle_loading(self, game):
         """Пока агенты грузятся — просто опрашиваем состояние."""
