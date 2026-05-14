@@ -8,9 +8,9 @@ config.properties:
 Весь вывод — в logs/ai.log и logs/ai_errors.log.
 
 Порядок запуска:
-  1. Создаём Coordinator и сразу signal_ready() — до любых тяжёлых импортов
-  2. Загружаем агентов (SB3, sklearn — могут занять несколько секунд)
-  3. Переключаем callback на боевой
+  1. Загружаем агентов (~7 сек, в пределах таймаута CommunicationMod 10 сек)
+  2. signal_ready() — к этому моменту Python уже готов к первому сообщению игры
+  3. coordinator.run() обрабатывает out_of_game → сразу стартует ран
 """
 
 import os
@@ -53,30 +53,22 @@ class SlayTheSpireAI:
     def __init__(self):
         self._combat_agent = None
         self._meta_agent   = None
-        self._agents_ready = False
         self._last_screen  = ""
         self._turn         = 0
 
-        self.coordinator = Coordinator()
-
-        # ── Шаг 1: signal_ready() ДО загрузки тяжёлых модулей ─────────
-        # CommunicationMod даёт только 10 секунд. Успеваем до таймаута.
-        self.coordinator.register_state_change_callback(self._handle_loading)
-        self.coordinator.register_out_of_game_callback(self._handle_out_of_game)
-        self.coordinator.register_command_error_callback(self._handle_error)
-        self.coordinator.signal_ready()
-        log.info("signal_ready отправлен — загружаем агентов...")
-
-        # ── Шаг 2: загружаем тяжёлые агенты ───────────────────────────
-        # Мета-агент выбирается через META_AGENT в config.py.
+        # ── Шаг 1: загружаем агентов (~7 сек, укладываемся в таймаут 10 сек) ─
+        log.info("Загружаем агентов...")
         from agents.combat_agent import CombatAgent
         self._combat_agent = CombatAgent()
         self._meta_agent   = _load_meta_agent()
-        self._agents_ready = True
 
-        # ── Шаг 3: переключаем callback на боевой ─────────────────────
+        # ── Шаг 2: signal_ready() — агенты уже готовы ─────────────────
+        self.coordinator = Coordinator()
         self.coordinator.register_state_change_callback(self._handle_game_state)
-        log.info("Агенты готовы. Ожидание игры...")
+        self.coordinator.register_out_of_game_callback(self._handle_out_of_game)
+        self.coordinator.register_command_error_callback(self._handle_error)
+        self.coordinator.signal_ready()
+        log.info("signal_ready отправлен. Ожидание игры...")
 
     # ── Callbacks ────────────────────────────────────────────────────
 
@@ -86,10 +78,6 @@ class SlayTheSpireAI:
         from config import CHARACTER, SEED
         player_class = PlayerClass[CHARACTER]
         return StartGameAction(player_class, ascension_level=0, seed=SEED)
-
-    def _handle_loading(self, game):
-        """Пока агенты грузятся — просто опрашиваем состояние."""
-        return StateAction()
 
     def _handle_error(self, error):
         self._error_count = getattr(self, "_error_count", 0) + 1
