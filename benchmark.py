@@ -46,7 +46,7 @@ from spirecomm.communication.action import (
 from spirecomm.spire.character import PlayerClass
 
 # ── Конфигурация (менять перед каждым запуском) ───────────────────────────
-AGENT         = "llm"          # "random" | "tree" | "forest" | "llm"
+AGENT         = "forest"          # "random" | "tree" | "forest" | "llm"
 SEEDS         = [
     101, 202, 303, 404, 505, 606, 707, 808, 909, 1010,
     1111, 1212, 1313, 1414, 1515, 1616, 1717, 1818, 1919, 2020,

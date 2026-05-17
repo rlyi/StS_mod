@@ -58,9 +58,16 @@ class SlayTheSpireAI:
 
         # ── Шаг 1: загружаем агентов (~7 сек, укладываемся в таймаут 10 сек) ─
         log.info("Загружаем агентов...")
-        from agents.combat_agent import CombatAgent
-        self._combat_agent = CombatAgent()
-        self._meta_agent   = _load_meta_agent()
+        from config import COMBAT_AGENT as _COMBAT_AGENT_TYPE
+        if _COMBAT_AGENT_TYPE == "graph":
+            from agents.graph_battle_agent import GraphBattleAgent
+            self._combat_agent = GraphBattleAgent()
+            log.info("Боевой агент: GraphBattleAgent (BFS)")
+        else:
+            from agents.combat_agent import CombatAgent
+            self._combat_agent = CombatAgent()
+            log.info("Боевой агент: CombatAgent (PPO)")
+        self._meta_agent = _load_meta_agent()
 
         # ── Шаг 2: signal_ready() — агенты уже готовы ─────────────────
         self.coordinator = Coordinator()
@@ -75,6 +82,8 @@ class SlayTheSpireAI:
     def _handle_out_of_game(self):
         if self._meta_agent is not None:
             self._meta_agent.reset_run()
+        if hasattr(self._combat_agent, 'reset_run'):
+            self._combat_agent.reset_run()
         from config import CHARACTER, SEED
         player_class = PlayerClass[CHARACTER]
         return StartGameAction(player_class, ascension_level=0, seed=SEED)
@@ -90,7 +99,6 @@ class SlayTheSpireAI:
     def _handle_game_state(self, game):
         screen = _screen_str(game)
         player = game.player  # может быть None на стартовых экранах
-
 
         if screen == "NONE":
             if player is None:
@@ -112,6 +120,11 @@ class SlayTheSpireAI:
                 log.info("Бой начался | этаж=%s HP=%d/%d",
                          getattr(game, "floor", "?"),
                          player.current_hp, player.max_hp)
+            return self._combat_agent.act(game)
+        elif (game.in_combat
+              and getattr(game, 'current_action', None) in ('DiscardAction', 'ExhaustAction')
+              and getattr(self._combat_agent, 'handles_forced_discard', False)):
+            # Принудительный сброс/исчерпание во время боя — отдаём боевому агенту
             return self._combat_agent.act(game)
         else:
             if screen != self._last_screen:
