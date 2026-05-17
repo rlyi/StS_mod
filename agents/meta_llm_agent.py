@@ -313,6 +313,28 @@ class LLMMetaAgent(BaseMetaAgent):
         idx  = int(data.get("choice", 0))
         return max(0, min(idx, n - 1))
 
+    def choose_card_forced(self, game) -> int:
+        """Выбрать карту когда скип невозможен."""
+        cards = getattr(getattr(game, "screen", None), "cards", [])
+        if not cards:
+            return 0
+        floor = getattr(game, "floor", "?")
+        names = [getattr(c, "name", str(c)) for c in cards]
+        opts  = "\n".join(
+            f"  {i}: {n}" + (f" — {_card_info(n)}" if _card_info(n) else "")
+            for i, n in enumerate(names)
+        )
+        prompt = (
+            f"{_ctx(game)}\n\n"
+            f"{self._history_block()}"
+            f"CARD REWARD — you MUST pick one card (skipping is not available):\n{opts}\n\n"
+            f'Return JSON: {{"choice": <0-{len(cards)-1}>}}'
+        )
+        idx = self._ask_index(prompt, len(cards))
+        self._log(f"F{floor}  CARD  forced '{names[idx]}'  [options: {', '.join(names)}]")
+        self.log.info("LLM choose_card_forced: %d (%s)", idx, names[idx])
+        return idx
+
     def choose_card(self, game) -> int:
         cards = getattr(getattr(game, "screen", None), "cards", [])
         if not cards:

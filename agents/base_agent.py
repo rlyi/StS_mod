@@ -49,6 +49,10 @@ class BaseMetaAgent(ABC):
         """Сбросить внутреннее состояние при начале нового рана. Переопределяется подклассом."""
         self._card_skipped = False
 
+    def choose_card_forced(self, game) -> int:
+        """Выбрать карту когда скип невозможен. По умолчанию берёт первую."""
+        return 0
+
     def choose_shop(self, game) -> int:
         """Выбрать покупку в магазине. -1 = выйти (по умолчанию пропускаем)."""
         return -1
@@ -95,13 +99,25 @@ class BaseMetaAgent(ABC):
             card_names = [getattr(c, "name", str(c)) for c in cards]
             idx = self.choose_card(game)
             if idx < 0:
-                self._card_skipped = True
-                log.info("[CARD   ] этаж=%-2s HP=%-7s варианты=%s → SKIP",
-                         floor, hp_str, card_names)
-                # proceed_available=True когда зашли через COMBAT_REWARD, иначе skip
+                # Проверяем можно ли вообще скипнуть
                 if getattr(game, "proceed_available", False):
+                    self._card_skipped = True
+                    log.info("[CARD   ] этаж=%-2s HP=%-7s варианты=%s → SKIP (proceed)",
+                             floor, hp_str, card_names)
                     return ProceedAction()
-                return _SkipAction
+                if getattr(game, "cancel_available", False):
+                    self._card_skipped = True
+                    log.info("[CARD   ] этаж=%-2s HP=%-7s варианты=%s → SKIP",
+                             floor, hp_str, card_names)
+                    return _SkipAction
+                # Скип невозможен — просим агента выбрать карту явно
+                idx = self.choose_card_forced(game)
+                idx = max(0, min(idx, len(cards) - 1)) if cards else 0
+                picked = card_names[idx] if idx < len(card_names) else f"#{idx}"
+                log.info("[CARD   ] этаж=%-2s HP=%-7s варианты=%s → FORCED '%s'",
+                         floor, hp_str, card_names, picked)
+                self._card_skipped = False
+                return ChooseAction(idx)
             else:
                 self._card_skipped = False
                 picked = card_names[idx] if idx < len(card_names) else f"#{idx}"
