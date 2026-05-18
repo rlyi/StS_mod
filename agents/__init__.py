@@ -2,10 +2,11 @@ import importlib
 import logging
 
 _AGENTS = {
-    "random": ("agents.meta_agent",        "RandomMetaAgent"),
-    "tree":   ("agents.meta_tree_agent",   "DecisionTreeMetaAgent"),
-    "forest": ("agents.meta_forest_agent", "RandomForestMetaAgent"),
-    "llm":    ("agents.meta_llm_agent",    "LLMMetaAgent"),
+    "random":  ("agents.meta_agent",          "RandomMetaAgent"),
+    "tree":    ("agents.meta_tree_agent",      "DecisionTreeMetaAgent"),
+    "forest":  ("agents.meta_forest_agent",    "RandomForestMetaAgent"),
+    "llm":     ("agents.meta_llm_agent",       "LLMMetaAgent"),
+    "rule":    ("agents.meta_rule_agent",       "RuleMetaAgent"),
 }
 
 

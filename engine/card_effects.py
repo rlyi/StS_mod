@@ -777,5 +777,9 @@ def get_card_effects(card, player, draw_pile: list, discard_pile: list, hand: li
         return [CardEffects(target=TargetType.MONSTER, damage=4 if not card.upgrade else 6, hits=1)]
     if card.id == CardId.WEAVE:
         return [CardEffects(target=TargetType.MONSTER, damage=4 if not card.upgrade else 6, hits=1)]
+    if card.id == CardId.FINESSE:
+        return [CardEffects(block=2 if not card.upgrade else 4, draw=1, target=TargetType.SELF)]
+    if card.id == CardId.DRAMATIC_ENTRANCE:
+        return [CardEffects(damage=8 if not card.upgrade else 12, hits=1, target=TargetType.ALL_MONSTERS)]
 
     return [CardEffects()]
