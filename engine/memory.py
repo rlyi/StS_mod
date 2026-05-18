@@ -1,6 +1,14 @@
+import pickle
 from enum import Enum
+from typing import TypeVar
 
 from engine.enums import CardId
+
+_T = TypeVar('_T')
+
+
+def pickle_deepcopy(obj: _T) -> _T:
+    return pickle.loads(pickle.dumps(obj, -1))
 
 
 class MemoryItem(Enum):

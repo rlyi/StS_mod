@@ -1,9 +1,8 @@
 import logging
 
 from engine.battle_state import BattleState
-from engine.card_cost import Cost
 from engine.cards import Card
-from engine.enums import CardId, CardType, OrbId, PowerId, RelicId, PotionId
+from engine.enums import CardId, CardType, OrbId, PowerId, RelicId, PotionId, Cost
 from engine.entities import Player, Monster
 from engine.memory import MemoryItem, TheBotsMemoryBook, ResetSchedule
 

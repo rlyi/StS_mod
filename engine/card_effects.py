@@ -3,8 +3,7 @@ import math
 from enum import Enum
 from typing import List
 
-from engine.card_cost import Cost
-from engine.enums import CardId, PowerId, RelicId, CardType
+from engine.enums import CardId, PowerId, RelicId, CardType, Cost
 from engine.memory import MemoryItem, StanceType
 
 

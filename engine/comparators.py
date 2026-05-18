@@ -3,13 +3,8 @@ from typing import Callable, List, Optional
 
 from engine.battle_state import BattleState
 from engine.enums import CardId, PowerId, RelicId, CardType
-from engine.entities import DEBUFFS
-from engine.memory import MemoryItem, ResetSchedule, StanceType
-from engine.helper import pickle_deepcopy
-
-
-def get_power_count(powers: dict, desired_powers: list) -> int:
-    return sum(powers[p] for p in powers.keys() if p in desired_powers)
+from engine.entities import DEBUFFS, get_power_count
+from engine.memory import MemoryItem, ResetSchedule, StanceType, pickle_deepcopy
 
 
 class ComparatorAssessmentConfig:

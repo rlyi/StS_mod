@@ -10,7 +10,7 @@ _SkipAction = Action(command="skip")
 class BaseMetaAgent(ABC):
     """Абстрактный базовый класс мета-агента.
 
-    Смена агента — одна строка в config.py (META_AGENT = "tree" / "random" / ...).
+    Смена агента — одна строка в config.py (META_AGENT = "rule" / "llm").
 
     Подкласс реализует только стратегические методы:
       choose_card   — какую карту взять в награду

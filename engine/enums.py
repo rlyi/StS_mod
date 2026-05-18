@@ -532,3 +532,8 @@ class OrbId(Enum):
     DARK = "Dark"
     PLASMA = "Plasma"
     INTERNAL_RANDOM_ORB = "Random"
+
+
+class Cost:
+    unplayable: int = -2
+    x_cost: int = -1

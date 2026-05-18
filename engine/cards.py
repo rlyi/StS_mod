@@ -1,5 +1,4 @@
-from engine.card_cost import Cost
-from engine.enums import CardId, CardType
+from engine.enums import CardId, CardType, Cost
 
 
 class Card:
