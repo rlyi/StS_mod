@@ -270,11 +270,14 @@ class RuleMetaAgent(BaseMetaAgent):
             deck_counts[k] = deck_counts.get(k, 0) + 1
 
         # Iterate DESIRED_CARDS in priority order — return FIRST match (like bottled_ai)
-        card_names = [getattr(c, 'name', getattr(c, 'card_id', '')).lower() for c in cards]
+        # Strip trailing '+' to match upgraded versions (e.g. 'Thunderclap+' → 'thunderclap')
+        card_names = [getattr(c, 'name', getattr(c, 'card_id', '')).lower().rstrip('+') for c in cards]
         for desired, max_copies in _DESIRED_CARDS.items():
             if desired not in card_names:
                 continue
-            if deck_counts.get(desired, 0) >= max_copies:
+            # Count both upgraded and non-upgraded copies in deck
+            deck_count = deck_counts.get(desired, 0) + deck_counts.get(desired + '+', 0)
+            if deck_count >= max_copies:
                 continue
             idx = card_names.index(desired)
             log.debug("choose_card: picking '%s' (idx=%d)", desired, idx)
