@@ -685,6 +685,12 @@ def get_card_effects(card, player, draw_pile: list, discard_pile: list, hand: li
         return [CardEffects(target=TargetType.SELF, applies_powers={PowerId.BARRICADE: 1})]
     if card.id == CardId.BURNING_PACT:
         return [CardEffects(target=TargetType.SELF, draw=2 if not card.upgrade else 3, amount_to_exhaust=1)]
+    if card.id == CardId.DOUBLE_TAP:
+        return [CardEffects(target=TargetType.SELF,
+                            applies_powers={PowerId.DOUBLE_TAP: 1 if not card.upgrade else 2})]
+    if card.id == CardId.CHOKE:
+        return [CardEffects(damage=12, hits=1, target=TargetType.MONSTER,
+                            applies_powers={PowerId.CHOKED: 3 if not card.upgrade else 5})]
 
     # ── Colorless / multi-class ──────────────────────────────────────────
     if card.id == CardId.WOUND:
