@@ -710,7 +710,7 @@ def _event_choice(event_name: str, event_id: str, hp_pct: float, n_options: int,
         case "Lab":
             return 0
 
-        case "Match and Keep!":
+        case "Match and Keep!" | "Match and Keep":
             return 0
 
         case "Ominous Forge":
@@ -839,6 +839,12 @@ def _event_choice(event_name: str, event_id: str, hp_pct: float, n_options: int,
             if hp_pct <= 10:
                 return 1
             return 2
+
+        case "The Moai Head":
+            return 0  # выпить → +1/3 макс HP
+
+        case "Wheel of Change":
+            return 0  # крутить колесо
 
         case _:
             log.warning("choose_event: неизвестное событие '%s', выбираем 0", event_name)
