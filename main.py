@@ -113,7 +113,7 @@ class SlayTheSpireAI:
               and getattr(self._combat_agent, 'handles_forced_discard', False)):
             return self._combat_agent.act(game)
         else:
-            if player is None:
+            if player is None and screen in ("MAP", "CHEST", "COMBAT_REWARD"):
                 return StateAction()
             if screen != self._last_screen:
                 hp_str = f"{player.current_hp}/{player.max_hp}"
@@ -288,7 +288,7 @@ class BenchmarkRunner:
             return ProceedAction()
 
         if screen != "NONE":
-            if player is None:
+            if player is None and screen in ("MAP", "CHEST", "COMBAT_REWARD"):
                 return StateAction()
             self._error_count = 0
             return self._meta_agent.act(game)
