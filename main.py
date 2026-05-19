@@ -113,8 +113,10 @@ class SlayTheSpireAI:
               and getattr(self._combat_agent, 'handles_forced_discard', False)):
             return self._combat_agent.act(game)
         else:
+            if player is None:
+                return StateAction()
             if screen != self._last_screen:
-                hp_str = f"{player.current_hp}/{player.max_hp}" if player else "?/?"
+                hp_str = f"{player.current_hp}/{player.max_hp}"
                 log.info("Экран: %-20s | этаж=%s HP=%s gold=%s",
                          screen, getattr(game, "floor", "?"),
                          hp_str, getattr(game, "gold", "?"))
@@ -286,6 +288,8 @@ class BenchmarkRunner:
             return ProceedAction()
 
         if screen != "NONE":
+            if player is None:
+                return StateAction()
             self._error_count = 0
             return self._meta_agent.act(game)
 
