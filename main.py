@@ -154,6 +154,8 @@ class BenchmarkRunner:
         self._seed_idx    = 0
         self._run_num     = 0
         self._last_floor  = 0
+        self._last_win    = False
+        self._last_deck   = []
         self._error_count = 0
 
         self._results: list[dict] = []
@@ -198,15 +200,36 @@ class BenchmarkRunner:
         self._seed_idx = len(self._seeds)
         log.info("Бенчмарк уже полностью завершён.")
 
-    def _record_and_advance(self):
-        self._results.append({"seed": self._seed, "floor": self._last_floor})
+    def _deck_completion(self, deck: list[str]) -> float:
+        counts: dict[str, int] = {}
+        for name in deck:
+            k = name.lower().rstrip('+')
+            counts[k] = counts.get(k, 0) + 1
+        total = sum(_cfg.TARGET_DECK.values())
+        if total == 0:
+            return 0.0
+        collected = sum(
+            min(counts.get(card, 0), max_copies)
+            for card, max_copies in _cfg.TARGET_DECK.items()
+        )
+        return round(collected / total, 3)
+
+    def _record_and_advance(self, win: bool, deck: list[str]):
+        completion = self._deck_completion(deck)
+        self._results.append({
+            "seed":            self._seed,
+            "floor":           self._last_floor,
+            "win":             win,
+            "deck_completion": completion,
+            "deck_at_end":     deck,
+        })
         os.makedirs(os.path.dirname(self._results_file), exist_ok=True)
         with open(self._results_file, "w", encoding="utf-8") as f:
             json.dump(self._results, f, indent=2, ensure_ascii=False)
 
-        log.info("забег %d/%d | сид=%-5d | этаж=%d",
+        log.info("забег %d/%d | сид=%-5d | этаж=%-2d | win=%s | deck=%.0f%%",
                  len(self._results), len(self._seeds) * self._runs_total,
-                 self._seed, self._last_floor)
+                 self._seed, self._last_floor, win, completion * 100)
 
         self._run_num += 1
         if self._run_num >= self._runs_total:
@@ -215,10 +238,26 @@ class BenchmarkRunner:
 
     def _handle_out_of_game(self):
         if self._is_finished():
+            total  = len(self._results)
+            wins   = sum(1 for r in self._results if r["win"])
             floors = [r["floor"] for r in self._results]
-            avg = sum(floors) / len(floors) if floors else 0
-            log.info("БЕНЧМАРК ЗАВЕРШЁН | агент=%s | avg_floor=%.1f | забегов=%d",
-                     self._agent_name, avg, len(floors))
+            compl  = [r["deck_completion"] for r in self._results]
+            avg_floor  = sum(floors) / total if total else 0
+            avg_compl  = sum(compl)  / total if total else 0
+            log.info(
+                "БЕНЧМАРК ЗАВЕРШЁН | агент=%s | забегов=%d | побед=%d | винрейт=%.1f%% | "
+                "avg_floor=%.1f | avg_deck=%.0f%%",
+                self._agent_name, total, wins, wins / total * 100 if total else 0,
+                avg_floor, avg_compl * 100,
+            )
+            print(
+                f"\n=== РЕЗУЛЬТАТЫ БЕНЧМАРКА ===\n"
+                f"Забегов:         {total}\n"
+                f"Побед:           {wins}\n"
+                f"Винрейт:         {wins / total * 100:.1f}%\n"
+                f"Средний этаж:    {avg_floor:.1f}\n"
+                f"Сборка колоды:   {avg_compl * 100:.1f}%\n"
+            )
             sys.exit(0)
 
         self._meta_agent.reset_run()
@@ -238,7 +277,12 @@ class BenchmarkRunner:
             self._last_floor = floor
 
         if screen in ("GAME_OVER", "COMPLETE"):
-            self._record_and_advance()
+            win  = (screen == "COMPLETE")
+            deck = [
+                getattr(c, "name", getattr(c, "card_id", "unknown"))
+                for c in getattr(game, "deck", [])
+            ]
+            self._record_and_advance(win=win, deck=deck)
             return ProceedAction()
 
         if screen != "NONE":
