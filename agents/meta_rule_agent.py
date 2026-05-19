@@ -34,7 +34,6 @@ def _get_all_paths(node, game_map, max_y):
 
 
 def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) -> float:
-    """Score a path using bottled_ai's PathHandlerConfig defaults."""
     reward = 0.0
     survivability = 1.0
 
@@ -45,7 +44,7 @@ def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) ->
         sym = str(getattr(node, 'symbol', '?')).upper()
 
         if sym == 'M':
-            reward += 1.0
+            reward += _cfg.PATH_FIGHT_REWARD
             if has('prayer wheel'):
                 reward += 0.3
             if has('question card'):
@@ -62,11 +61,11 @@ def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) ->
                 hp += 6
 
         elif sym == 'E':
-            reward += 1.0 + 1.5  # base + relic
+            reward += _cfg.PATH_ELITE_REWARD + _cfg.PATH_RELIC_REWARD
             if has('question card'):
                 reward += 0.15
             if has('black star'):
-                reward += 1.5
+                reward += _cfg.PATH_RELIC_REWARD
             gold += 30
             hp -= (act + 1) * 15
             if has('meat on the bone') and hp / max_hp < 0.5:
@@ -79,20 +78,20 @@ def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) ->
                 hp += 6
 
         elif sym == 'T':
-            reward += 1.5
+            reward += _cfg.PATH_RELIC_REWARD
             if has('matryoshka'):
                 reward += 1.0
             if has('cursed key'):
-                reward -= 1.5
+                reward -= _cfg.PATH_CURSE_LOSS
 
         elif sym == 'R':
             if has('eternal feather'):
                 deck_size = len(getattr(game, 'deck', []))
                 hp += (deck_size // 5) * 3
-            has_fusion   = has('fusion hammer')
-            has_coffee   = has('coffee dripper')
+            has_fusion = has('fusion hammer')
+            has_coffee = has('coffee dripper')
             if not has_fusion and (has_coffee or hp / max_hp >= 0.6):
-                reward += 1.1
+                reward += _cfg.PATH_UPGRADE_REWARD
             if not has_coffee and (has_fusion or hp / max_hp < 0.6):
                 hp += max_hp * 0.3
                 if has('regal pillow'):
@@ -101,7 +100,7 @@ def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) ->
                     reward += 0.5
 
         elif sym == '?':
-            reward += 1.0 if act == 1 else 1.5
+            reward += _cfg.PATH_EVENT_REWARD_A1 if act == 1 else _cfg.PATH_EVENT_REWARD_A2
 
         elif sym == '$':
             if has('membership card'):
@@ -110,7 +109,7 @@ def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) ->
             else:
                 gold_to_spend = min(gold, 200) * 2
                 gold -= gold_to_spend / 2
-            reward += gold_to_spend / 100
+            reward += gold_to_spend / _cfg.PATH_GOLD_SHOP_DIV
 
         survive_barrier = max_hp / 4
         if hp < survive_barrier:
@@ -118,9 +117,9 @@ def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) ->
         hp = min(max(hp, 0), max_hp)
 
     if act != 3:
-        reward += gold / 200  # gold_after_boss_reward
+        reward += gold / _cfg.PATH_GOLD_END_DIV
 
-    return reward + (survivability - 1) * 15  # survivability_reward_calculation
+    return reward + (survivability - 1) * _cfg.PATH_SURVIVABILITY_K
 
 
 # ---------------------------------------------------------------------------

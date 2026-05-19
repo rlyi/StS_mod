@@ -103,6 +103,19 @@ UPGRADE_PRIORITY: list[str] = [
     'reaper', 'handofgreed',
 ]
 
+# ── Map path scoring ───────────────────────────────────────────────────
+# Награда за каждый тип узла на пути (look-ahead до конца акта).
+PATH_FIGHT_REWARD:    float = 1.0   # обычный бой (M)
+PATH_ELITE_REWARD:    float = 1.0   # элита, без учёта реликта
+PATH_RELIC_REWARD:    float = 1.5   # реликт (элита, сундук)
+PATH_CURSE_LOSS:      float = 1.5   # штраф за Cursed Key в сундуке
+PATH_UPGRADE_REWARD:  float = 1.1   # костёр (апгрейд)
+PATH_EVENT_REWARD_A1: float = 1.0   # событие (?) в акте 1
+PATH_EVENT_REWARD_A2: float = 1.5   # событие (?) в актах 2–3
+PATH_GOLD_SHOP_DIV:   float = 100.0 # золото в магазине делится на это → reward
+PATH_GOLD_END_DIV:    float = 200.0 # остаток золота после акта делится на это
+PATH_SURVIVABILITY_K: float = 15.0  # вес штрафа за низкий HP на пути
+
 # ── Paths ──────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
