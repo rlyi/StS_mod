@@ -41,6 +41,48 @@ TARGET_DECK: dict[str, int] = {
 # Всё остальное вне TARGET_DECK удаляется после них.
 REMOVAL_PRIORITY: list[str] = ['defend', 'strike']
 
+# ── Campfire ───────────────────────────────────────────────────────────
+# Порядок действий у костра. Берётся первое доступное и целесообразное.
+# rest  — лечение (срабатывает если HP < HP_HEAL_THRESHOLD)
+# smith — апгрейд карты (если есть карта из UPGRADE_PRIORITY)
+# toke  — удалить карту (реликт Peace Pipe; если есть проклятие/лишняя карта)
+# lift  — +1 сила (реликт Girya; если ещё не максимум)
+# dig   — получить реликт (реликт Shovel; всегда целесообразно)
+CAMPFIRE_PRIORITY: list[str] = ['rest', 'smith', 'toke', 'lift', 'dig']
+HP_HEAL_THRESHOLD: float = 0.60       # лечиться если HP% ниже этого
+HP_HEAL_THRESHOLD_BOSS: float = 0.85  # порог перед боссом акта 3
+
+# ── Shop ────────────────────────────────────────────────────────────────
+# Порядок действий в магазине. Берётся первое доступное и целесообразное.
+# relics — покупка реликта из SHOP_RELICS
+# cards  — покупка карт из TARGET_DECK (если не добрали)
+# purge  — удаление карты (если есть проклятие или карта вне TARGET_DECK)
+SHOP_PRIORITY: list[str] = ['relics', 'cards', 'purge']
+
+# Реликты которые стоит покупать в магазине (приоритет сверху вниз).
+SHOP_RELICS: list[str] = [
+    'Membership Card', 'Bag of Marbles', 'Pen Nib', 'Strike Dummy',
+    'Paper Phrog', 'Preserved Insect', 'Red Skull', 'Meat on the Bone',
+    'Eternal Feather', 'Regal Pillow', "Lee's Waffle", 'Meal Ticket',
+    'Strawberry', 'Toy Ornithopter', 'Pantograph', 'Pear', 'Orichalcum',
+    'Anchor', 'Horn Cleat', 'Self-Forming Clay', 'Thread and Needle',
+    'Lantern', 'Happy Flower', 'Bag of Preparation', 'Centennial Puzzle',
+]
+
+# Зелья по приоритету (первое = самое желанное; используется при жонглировании).
+DESIRED_POTIONS: list[str] = [
+    'fruit juice', 'fairy in a bottle', 'cultist potion', 'power potion',
+    'potion of capacity', 'heart of iron', 'duplication potion',
+    'distilled chaos', 'blessing of the forge', 'attack potion',
+    'dexterity potion', 'ambrosia', 'fear potion', 'essence of steel',
+    'strength potion', 'regen potion', 'blood potion', 'entropic brew',
+    'liquid bronze', 'energy potion', 'skill potion', 'ancient potion',
+    'weak potion', "gambler's brew", 'poison potion', 'colorless potion',
+    'flex potion', 'swift potion', 'bottled miracle', 'fire potion',
+    'explosive potion', 'speed potion', 'block potion', 'stance potion',
+    'smoke bomb', 'elixir potion', 'liquid memories', 'snecko oil',
+]
+
 # Приоритет реликтов босса (первый = самый желанный).
 BOSS_RELIC_PRIORITY: list[str] = [
     'sozu', 'runic dome', "philosopher's stone", 'ectoplasm',

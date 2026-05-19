@@ -127,9 +127,7 @@ def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) ->
 # Rest-site logic
 # ---------------------------------------------------------------------------
 
-_HP_HEAL_THRESHOLD    = 0.60
-_HP_HEAL_FLOOR49      = 0.85
-_CAMPFIRE_PRE_BOSS    = {15, 32, 49}
+_CAMPFIRE_PRE_BOSS = {15, 32, 49}
 
 # ---------------------------------------------------------------------------
 # Boss relic priority
@@ -145,14 +143,6 @@ _ENERGY_RELICS = {
 # Shop purchases
 # ---------------------------------------------------------------------------
 
-_SHOP_RELICS = [
-    'Bag of Marbles', 'Pen Nib', 'Strike Dummy', 'Paper Phrog',
-    'Preserved Insect', 'Red Skull', 'Meat on the Bone', 'Eternal Feather',
-    'Regal Pillow', "Lee's Waffle", 'Meal Ticket', 'Strawberry',
-    'Toy Ornithopter', 'Pantograph', 'Pear', 'Orichalcum', 'Anchor',
-    'Horn Cleat', 'Self-Forming Clay', 'Thread and Needle', 'Lantern',
-    'Happy Flower', 'Bag of Preparation', 'Centennial Puzzle',
-]
 
 
 # ---------------------------------------------------------------------------
@@ -165,18 +155,6 @@ _UNDESIRED_RELICS = {'bottled flame', 'cloak clasp', 'dead branch'}
 # Potion juggling — most desired first (same as bottled_ai default_desired_potions)
 # ---------------------------------------------------------------------------
 
-_DESIRED_POTIONS = [
-    'fruit juice', 'fairy in a bottle', 'cultist potion', 'power potion',
-    'potion of capacity', 'heart of iron', 'duplication potion',
-    'distilled chaos', 'blessing of the forge', 'attack potion',
-    'dexterity potion', 'ambrosia', 'fear potion', 'essence of steel',
-    'strength potion', 'regen potion', 'blood potion', 'entropic brew',
-    'liquid bronze', 'energy potion', 'skill potion', 'ancient potion',
-    'weak potion', "gambler's brew", 'poison potion', 'colorless potion',
-    'flex potion', 'swift potion', 'bottled miracle', 'fire potion',
-    'explosive potion', 'speed potion', 'block potion', 'stance potion',
-    'smoke bomb', 'elixir potion', 'liquid memories', 'snecko oil',
-]
 
 # ---------------------------------------------------------------------------
 # Neow desired choices (priority order, first = most desired)
@@ -303,32 +281,36 @@ class RuleMetaAgent(BaseMetaAgent):
         floor  = getattr(game, 'floor', 0)
         hp_pct = game.current_hp / max(game.max_hp or 1, 1)
 
-        has_pantograph     = _has_relic(game, 'pantograph')
-        panto_covers       = has_pantograph and floor in _CAMPFIRE_PRE_BOSS and hp_pct >= 0.40
-        panto_floor49      = has_pantograph and floor == 49 and hp_pct >= 0.60
-        worth_healing      = hp_pct <= _HP_HEAL_THRESHOLD and not panto_covers
-        worth_healing_f49  = floor == 49 and hp_pct <= _HP_HEAL_FLOOR49 and not panto_floor49
+        has_pantograph = _has_relic(game, 'pantograph')
+        panto_covers   = has_pantograph and floor in _CAMPFIRE_PRE_BOSS and hp_pct >= 0.40
+        panto_boss     = has_pantograph and floor == 49 and hp_pct >= 0.60
+        worth_healing  = hp_pct <= _cfg.HP_HEAL_THRESHOLD and not panto_covers
+        worth_boss     = floor == 49 and hp_pct <= _cfg.HP_HEAL_THRESHOLD_BOSS and not panto_boss
 
-        can_rest  = any('REST'  in o for o in opts)
-        can_smith = any('SMITH' in o for o in opts)
-        can_toke  = any('TOKE'  in o for o in opts)
-        can_lift  = any('LIFT'  in o for o in opts)
-        can_dig   = any('DIG'   in o for o in opts)
+        can = {
+            'rest':  any('REST'  in o for o in opts),
+            'smith': any('SMITH' in o for o in opts),
+            'toke':  any('TOKE'  in o for o in opts),
+            'lift':  any('LIFT'  in o for o in opts),
+            'dig':   any('DIG'   in o for o in opts),
+        }
 
-        if can_rest and (worth_healing or worth_healing_f49):
-            return 'REST'
-        if can_toke and _has_removable_curse(game):
-            return 'TOKE'
-        if can_smith and _has_high_priority_upgrade(game):
-            return 'SMITH'
-        if can_lift and _girya_below_max(game):
-            return 'LIFT'
-        if can_dig:
-            return 'DIG'
-        if can_smith:
-            return 'SMITH'
-        if can_toke and _has_removal_priority_card(game):
-            return 'TOKE'
+        def worthwhile(action: str) -> bool:
+            if action == 'rest':  return worth_healing or worth_boss
+            if action == 'smith': return _has_high_priority_upgrade(game)
+            if action == 'toke':  return _has_removable_curse(game) or _has_removal_priority_card(game) or _has_non_target_card(game)
+            if action == 'lift':  return _girya_below_max(game)
+            if action == 'dig':   return True
+            return False
+
+        for action in _cfg.CAMPFIRE_PRIORITY:
+            if can.get(action) and worthwhile(action):
+                return action.upper()
+
+        # фоллбэк — первое доступное из списка
+        for action in _cfg.CAMPFIRE_PRIORITY:
+            if can.get(action):
+                return action.upper()
         return 'REST'
 
     # --- choose_event --------------------------------------------------------
@@ -378,54 +360,38 @@ class RuleMetaAgent(BaseMetaAgent):
                     return i
         return 0
 
-    # --- choose_shop ---------------------------------------------------------
+    # --- shop helpers --------------------------------------------------------
 
-    def choose_shop(self, game) -> int:
+    def _try_shop_relics(self, game) -> int | None:
         s      = getattr(game, 'screen', None)
-        cards  = getattr(s, 'cards',   [])
-        relics = getattr(s, 'relics',  [])
+        cards  = getattr(s, 'cards',  [])
+        relics = getattr(s, 'relics', [])
         gold   = getattr(game, 'gold', 0)
-
-        deck_names = {
-            getattr(c, 'name', getattr(c, 'card_id', '')).lower()
-            for c in getattr(game, 'deck', [])
-        }
-
-        # 1. Perfected Strike
-        for i, card in enumerate(cards):
-            if getattr(card, 'name', getattr(card, 'card_id', '')).lower() == 'perfected strike':
-                if gold >= getattr(card, 'price', 9999):
-                    return i
-
-        # 2. Membership Card (before other relics)
-        for i, r in enumerate(relics):
-            if getattr(r, 'name', '') == 'Membership Card' and gold >= getattr(r, 'price', 9999):
-                return len(cards) + i
-
-        # 3. Other relics by priority
         relic_names  = [getattr(r, 'name',  '') for r in relics]
         relic_prices = [getattr(r, 'price', 9999) for r in relics]
-        for pref in _SHOP_RELICS:
+        for pref in _cfg.SHOP_RELICS:
             for i, rname in enumerate(relic_names):
                 if rname == pref and gold >= relic_prices[i]:
                     return len(cards) + i
+        return None
 
-        # 4. Cards from TARGET_DECK that are still undercounted
+    def _try_shop_cards(self, game) -> int | None:
+        s      = getattr(game, 'screen', None)
+        cards  = getattr(s, 'cards', [])
+        gold   = getattr(game, 'gold', 0)
         deck_counts: dict[str, int] = {}
         for c in getattr(game, 'deck', []):
             k = getattr(c, 'name', getattr(c, 'card_id', '')).lower().rstrip('+')
             deck_counts[k] = deck_counts.get(k, 0) + 1
         for desired, max_copies in _cfg.TARGET_DECK.items():
-            current = deck_counts.get(desired, 0)
-            if current >= max_copies:
+            if deck_counts.get(desired, 0) >= max_copies:
                 continue
             for i, card in enumerate(cards):
                 name  = getattr(card, 'name', getattr(card, 'card_id', '')).lower().rstrip('+')
                 price = getattr(card, 'price', 9999)
                 if name == desired and gold >= price:
                     return i
-
-        return -1  # leave shop
+        return None
 
     # --- choose_grid ---------------------------------------------------------
 
@@ -461,9 +427,20 @@ class RuleMetaAgent(BaseMetaAgent):
         screen = _screen_type(game)
 
         if screen == 'SHOP_SCREEN':
-            purge = self._try_shop_purge(game)
-            if purge is not None:
-                return purge
+            for action in _cfg.SHOP_PRIORITY:
+                if action == 'purge':
+                    result = self._try_shop_purge(game)
+                    if result is not None:
+                        return result
+                elif action == 'relics':
+                    idx = self._try_shop_relics(game)
+                    if idx is not None:
+                        return ChooseAction(idx)
+                elif action == 'cards':
+                    idx = self._try_shop_cards(game)
+                    if idx is not None:
+                        return ChooseAction(idx)
+            return ProceedAction()
 
         if screen == 'COMBAT_REWARD':
             return self._handle_combat_reward(game)
@@ -533,7 +510,7 @@ class RuleMetaAgent(BaseMetaAgent):
         all_names    = held_names + [reward_name]
 
         # Iterate from least desired to most desired
-        for least in reversed(_DESIRED_POTIONS):
+        for least in reversed(_cfg.DESIRED_POTIONS):
             if least not in all_names:
                 continue
             if least == reward_name:
