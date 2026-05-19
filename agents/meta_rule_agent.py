@@ -430,7 +430,7 @@ class RuleMetaAgent(BaseMetaAgent):
     def act(self, game):
         screen = _screen_type(game)
 
-        if screen == 'SHOP_SCREEN':
+        if screen in ('SHOP_SCREEN', 'SHOP_ROOM'):
             for action in _cfg.SHOP_PRIORITY:
                 if action == 'purge':
                     result = self._try_shop_purge(game)
@@ -836,5 +836,5 @@ def _event_choice(event_name: str, event_id: str, hp_pct: float, n_options: int,
             return 2
 
         case _:
-            log.debug("choose_event: unknown event '%s', defaulting to 0", event_name)
+            log.warning("choose_event: неизвестное событие '%s', выбираем 0", event_name)
             return 0
