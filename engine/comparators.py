@@ -293,12 +293,8 @@ def most_optimal_winning_battle(best: CA, challenger: CA) -> Optional[bool]:
         return None
     if best.player_max_hp() != challenger.player_max_hp():
         return challenger.player_max_hp() > best.player_max_hp()
-    if best.most_kills_with_lesson_learned() != challenger.most_kills_with_lesson_learned():
-        return challenger.most_kills_with_lesson_learned() > best.most_kills_with_lesson_learned()
     if best.power_up_ritual_dagger() != challenger.power_up_ritual_dagger():
         return challenger.power_up_ritual_dagger() > best.power_up_ritual_dagger()
-    if best.power_up_genetic_algorithm() != challenger.power_up_genetic_algorithm():
-        return challenger.power_up_genetic_algorithm() > best.power_up_genetic_algorithm()
     if best.incoming_damage() != challenger.incoming_damage():
         return challenger.incoming_damage() < best.incoming_damage()
     if best.repair_count() != challenger.repair_count():
@@ -576,27 +572,19 @@ default_comparisons: List[Comparison] = [
     battle_is_won,
     preserve_revive_options,
     most_optimal_winning_battle,
-    no_blasphemy,
     most_free_early_draw,
     most_free_draw,
     most_lasting_intangible,
     least_incoming_damage_over_1,
     most_great_player_powers,
     most_dead_monsters,
-    most_tranquility,
-    most_enemy_talking_to_hand,
     most_enemy_vulnerable,
     most_enemy_weak,
-    least_awkward_shivs,
-    killed_with_lesson_learned,
     most_powered_up_ritual_dagger,
-    kept_expensive_decreasing_cost_retain_cards,
     lowest_health_monster,
     lowest_total_monster_health,
     lowest_barricaded_block,
     lowest_enemy_plated_armor,
-    most_orb_slots,
-    most_channeled_orbs,
     most_draw_pay_early,
     most_draw_pay,
     most_good_player_powers,
@@ -604,14 +592,9 @@ default_comparisons: List[Comparison] = [
     most_less_good_player_powers,
     least_enemy_artifacts,
     most_bad_cards_exhausted,
-    most_powered_up_genetic_algorithm,
     most_cards_left_in_hand,
     least_incoming_damage,
     most_ethereal_cards_saved_for_later,
-    most_powered_up_claws,
-    stance_is_not_wrath,
-    stance_is_calm,
-    least_powered_down_steam_barrier,
     most_block_saved_for_next_turn,
     most_energy,
 ]
@@ -650,9 +633,6 @@ def _make_big_fight_comparisons():
     _move_after(c, most_good_player_powers, most_dead_monsters)
     _move_after(c, least_enemy_artifacts, most_enemy_vulnerable)
     _add_after(c, avoid_inconvenient_time_warp, least_incoming_damage_over_1)
-    _move_after(c, most_powered_up_ritual_dagger, most_powered_up_genetic_algorithm)
-    _move_after(c, killed_with_lesson_learned, most_powered_up_genetic_algorithm)
-    _add_after(c, most_crescendo, most_tranquility)
     return c
 
 
