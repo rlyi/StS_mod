@@ -1,7 +1,16 @@
-# Slay the Spire AI
+# Slay the Spire — Automated Deck Testing Tool
 
-Автономный ИИ-агент для Slay the Spire на базе обучения с подкреплением + Decision Tree.  
-Разрабатывается на Windows, запускается через CommunicationMod.
+Инструмент для автоматического тестирования стратегий сборки колоды в Slay the Spire.  
+Запускается через CommunicationMod, работает на Windows.
+
+## Концепция
+
+Система разделена на два агента:
+
+- **GraphBattleAgent** — детерминированный BFS-агент для боя. Перебирает все возможные последовательности карт за ход и выбирает оптимальную по иерархии критериев. Не зависит от стратегии — оптимально разыгрывает любую колоду.
+- **RuleMetaAgent** — правило-based агент для мета-игры. Полностью управляется через `config.py`: собирает целевую колоду (`TARGET_DECK`), выбирает путь на карте, управляет магазином, кострами, событиями, зельями и реликтами.
+
+Такое разделение позволяет **изолировать боевую составляющую** — разница в результатах бенчмарка отражает только качество стратегии колоды, а не мастерство в бою.
 
 ## Архитектура
 
@@ -9,105 +18,94 @@
 Slay the Spire
       │
 CommunicationMod (Java)
-      │  stdin/stdout JSON  (stdout занят протоколом — весь вывод в logs/ai.log)
+      │  stdin/stdout JSON
       ▼
 main.py
-  ├── screen == COMBAT  →  CombatAgent  (PPO, Stable-Baselines3)
-  └── иначе             →  MetaAgent    (Decision Tree / Random Forest / правила)
+  ├── screen == COMBAT  →  GraphBattleAgent  (BFS, детерминированный оптимум)
+  └── иначе             →  RuleMetaAgent     (правила из config.py)
 ```
 
-**CombatAgent** — принимает решения в бою: какую карту сыграть, на кого, когда завершить ход, применить ли зелье.
+## Настройка стратегии (config.py)
 
-**MetaAgent** — всё вне боя: выбор пути на карте, карты в награду, магазин, события, костёр, босс-реликвия.
+Все параметры стратегии задаются в `config.py` без изменения кода агентов.
 
-Три реализации MetaAgent (переключается в `config.py` → `META_AGENT`):
-- `"random"` — случайный baseline (`RandomMetaAgent`)
-- `"tree"` — Decision Tree, обучен на датасете SlayTheData (`DecisionTreeMetaAgent`)
-- `"forest"` — Random Forest, аналогичен DT но с sample_weight по победам (`RandomForestMetaAgent`)
-
-## Ограничения (текущая версия)
-
-| Параметр | Значение |
-|----------|----------|
-| Персонаж | Ironclad |
-| Акт | 1 (этажи 1–17) |
-| Сложность | Ascension 0 |
-| Сид по умолчанию | 42 |
-
-## Структура проекта
-
-```
-StS_mod/
-├── main.py                        # Точка входа: координация агентов
-├── benchmark.py                   # Сравнение мета-агентов (random/tree/forest × сиды)
-├── config.py                      # Константы: OBS_SIZE=102, ACTION_SIZE=51, CARD_PROPERTIES, …
-├── requirements.txt
-├── agents/
-│   ├── base_agent.py              # Абстрактный интерфейс BaseMetaAgent
-│   ├── meta_agent.py              # RandomMetaAgent (baseline)
-│   ├── meta_tree_agent.py         # DecisionTreeMetaAgent + жёсткие правила событий
-│   └── meta_forest_agent.py       # RandomForestMetaAgent (наследует DT, другие pkl-пути)
-├── environment/
-│   ├── combat_env.py              # Gymnasium-обёртка: два потока (spirecomm + SB3)
-│   └── reward.py                  # Функция награды
-├── training/
-│   ├── train_combat.py            # Обучение CombatAgent (PPO, 100k шагов, чекпоинты каждые 5k)
-│   ├── train_meta.py              # Обучение DT по данным из data/runs/ (собственные логи)
-│   ├── train_meta_slaythedata.py  # Обучение DT на датасете SlayTheData (лучшее качество)
-│   └── train_meta_slaythedata_rf.py  # RF-вариант, sample_weight по победам
-├── models/
-│   ├── combat_ppo_*_steps.zip     # Чекпоинты PPO (5k–90k шагов, не в git)
-│   ├── meta_card_slaythedata_dt.pkl
-│   ├── meta_campfire_slaythedata_dt.pkl
-│   ├── meta_path_slaythedata_dt.pkl
-│   ├── meta_event_slaythedata_dt.pkl
-│   ├── meta_shop_slaythedata_dt.pkl
-│   └── meta_*_slaythedata_rf.pkl  # RF-версии тех же моделей
-└── data/
-    ├── benchmark_results.json     # Результаты benchmark.py
-    └── cluster_the_spire.zip      # Датасет SlayTheData (Kaggle)
+### Целевая колода
+```python
+TARGET_DECK: dict[str, int] = {
+    'perfected strike': 5,   # карта → максимум копий
+    'battle trance':    2,
+    'offering':         1,
+    ...
+}
 ```
 
-## Пространство наблюдений (OBS_SIZE = 102)
+### Приоритеты действий
+```python
+CAMPFIRE_PRIORITY: list[str] = ['rest', 'smith', 'toke', 'lift', 'dig']
+SHOP_PRIORITY:     list[str] = ['relics', 'cards', 'purge']
+REMOVAL_PRIORITY:  list[str] = ['defend', 'strike']
+UPGRADE_PRIORITY:  list[str] = ['apotheosis', 'perfected strike', 'bash', ...]
+BOSS_RELIC_PRIORITY: list[str] = ['sozu', 'runic dome', ...]
+DESIRED_POTIONS:   list[str] = ['fruit juice', 'fairy in a bottle', ...]
+```
 
-| Индексы | Описание |
-|---------|----------|
-| 0–13 | Игрок: hp, energy, block, strength, dexterity, vulnerable, weak, poison, metallicize, corruption, barricade, draw_pile, discard_size, turn |
-| 14–69 | Рука (до 7 карт × 8): is_attack, is_skill, is_power, is_other, dmg/20, blk/20, cost/3, is_upgraded |
-| 70–89 | Враги (до 4 × 5): hp_norm, intent_norm, block_norm, damage_norm, ritual_norm |
-| 90–101 | Зелья (3 слота × 4): present, is_heal, is_attack, is_utility |
+### Пороги
+```python
+HP_HEAL_THRESHOLD:      float = 0.60   # лечиться если HP% ниже этого
+HP_HEAL_THRESHOLD_BOSS: float = 0.85   # порог перед финальным боссом
+```
 
-## Пространство действий (ACTION_SIZE = 51)
+### Коэффициенты выбора пути на карте
+```python
+PATH_FIGHT_REWARD:    float = 1.0   # обычный бой (M)
+PATH_ELITE_REWARD:    float = 1.0   # элита
+PATH_RELIC_REWARD:    float = 1.5   # реликт (элита, сундук)
+PATH_UPGRADE_REWARD:  float = 1.1   # костёр
+PATH_EVENT_REWARD_A1: float = 1.0   # событие в акте 1
+PATH_EVENT_REWARD_A2: float = 1.5   # событие в актах 2–3
+PATH_SURVIVABILITY_K: float = 15.0  # штраф за опасные пути
+```
 
-| Диапазон | Смысл |
-|----------|-------|
-| 0–6 | Карта 0–6 без цели (скиллы, пауэры) |
-| 7–13 | Карта 0–6 → враг 0 |
-| 14–20 | Карта 0–6 → враг 1 |
-| 21–27 | Карта 0–6 → враг 2 |
-| 28–34 | Карта 0–6 → враг 3 |
-| 35 | Завершить ход |
-| 36–40 | Зелье слот 0 (36=без цели, 37–40=враги 0–3) |
-| 41–45 | Зелье слот 1 |
-| 46–50 | Зелье слот 2 |
+## Бенчмарк
 
-## Функция награды
+```python
+BENCHMARK_MODE          = True   # включить бенчмарк
+BENCHMARK_RUNS_PER_SEED = 1      # забегов на сид
+BENCHMARK_SEEDS         = [101, 202, ...]  # 100 сидов
+```
 
-| Событие | Значение |
-|---------|----------|
-| Победа в бою | +2.0 + hp_pct × 1.0 |
-| Убийство врага | +0.5 |
-| Урон врагу | +0.03 × min(dmg, enemy_hp) |
-| Смерть | −2.0 |
-| Урон игроку | −0.03 × dmg |
-| Каждый ход | −0.01 |
-| Победа над боссом Акт 1 | +10.0 |
+Результаты сохраняются в `benchmark_rule.json`:
+```json
+{
+  "seed": 101,
+  "floor": 51,
+  "win": true,
+  "deck_completion": 0.85,
+  "deck_at_end": ["Perfected Strike", "Perfected Strike+", ...]
+}
+```
+
+**Метрики:** винрейт (полное прохождение 3 актов), средний этаж, процент сборки целевой колоды.
+
+## Боевой агент: как работает BFS
+
+1. Из текущего состояния (рука, энергия, монстры, паверы) генерируются все возможные последовательности карт — до 11 000 уникальных состояний
+2. Каждое конечное состояние оценивается иерархией из 29 критериев (не умереть → выиграть → минимум урона → убить монстров → ...)
+3. Выбирается первый ход лучшего пути
+
+Специальные компараторы для нестандартных врагов:
+| Враг | Стратегия |
+|------|-----------|
+| Gremlin Nob | Не тянуть карты скиллами (Nob усиливается) |
+| Three Sentries | Убивать крайних монстров приоритетнее |
+| Lagavulin | Ждать пробуждения (не атаковать первые 2 хода) |
+| Transient | Не тратить ресурсы (умрёт сам через 3 хода) |
+| Боссы (эт. 33, 50) | Приоритет накопления паверов |
 
 ## Установка
 
 ```bash
 pip install spirecomm @ git+https://github.com/ForgottenArbiter/spirecomm.git
-pip install stable-baselines3 scikit-learn gymnasium tensorboard numpy matplotlib
 ```
 
 ### Настройка CommunicationMod
@@ -124,48 +122,41 @@ runAtGameStart=true
 ## Запуск
 
 ```bash
-# Играть (требует запущенной игры с CommunicationMod)
+# Живая игра (требует запущенной игры с CommunicationMod)
 python main.py
 
-# Benchmark: сравнение агентов на нескольких сидах
-python benchmark.py
-# Настройки AGENT / SEEDS / RUNS_PER_SEED — в начале файла
-
-# TensorBoard
-tensorboard --logdir logs/combat
+# Бенчмарк (BENCHMARK_MODE = True в config.py)
+python main.py
 ```
 
-## Обучение
+## Структура проекта
 
-```bash
-# Боевой агент PPO (100k шагов, чекпоинты каждые 5k, нужна живая игра)
-python training/train_combat.py
-
-# Мета-агент: Decision Tree на датасете SlayTheData
-python training/train_meta_slaythedata.py
-
-# Мета-агент: Random Forest (sample_weight по победам)
-python training/train_meta_slaythedata_rf.py
+```
+StS_mod/
+├── main.py                    # Точка входа: живая игра и BenchmarkRunner
+├── config.py                  # Все параметры стратегии
+├── agents/
+│   ├── base_agent.py          # Базовый класс агентов
+│   ├── graph_battle_agent.py  # BFS боевой агент
+│   ├── meta_rule_agent.py     # Rule-based мета-агент
+│   └── meta_llm_agent.py      # LLM мета-агент (альтернатива)
+├── engine/
+│   ├── battle_state.py        # Симулятор боя
+│   ├── card_effects.py        # Эффекты всех Ironclad-карт
+│   ├── comparators.py         # Иерархия критериев для BFS
+│   ├── converter.py           # Конвертер game → BattleState
+│   ├── memory.py              # Память между ходами (Rampage и др.)
+│   └── play_path.py           # BFS по путям карт
+└── logs/
+    ├── ai.log                 # Лог живой игры
+    └── benchmark.log          # Лог бенчмарка
 ```
 
-Датасет `data/cluster_the_spire.zip` — SlayTheData с Kaggle, содержит реальные пробежки.
+## Персонаж и ограничения
 
-## Технические детали
-
-- **Два потока в CombatEnv**: фоновый поток читает stdin/пишет stdout (spirecomm Coordinator), основной поток — SB3 обучение. Общение через `state_q` / `action_q`.
-- **signal_ready()** вызывается до загрузки SB3/sklearn — CommunicationMod даёт 10 секунд на старт.
-- **Таргетинг**: `play X Y`, где Y — `monster_index` из массива `game.monsters`. Живые монстры фильтруются через `is_gone` и `current_hp > 0`.
-- **Neow event** (floor 0): экран `EVENT` не принимает `choose` — ожидать ручного выбора.
-- **Модели загружаются автоматически**: CombatAgent ищет `combat_ppo.zip`, если нет — берёт последний чекпоинт `combat_ppo_N_steps.zip`.
-
-## Статус
-
-| Компонент | Статус |
-|-----------|--------|
-| CommunicationMod интеграция | ✅ Готово |
-| CombatAgent (PPO) | 🔄 Обучается (90k шагов сохранено) |
-| MetaAgent Decision Tree | ✅ Готово (SlayTheData датасет) |
-| MetaAgent Random Forest | ✅ Готово (sample_weight по победам) |
-| Benchmark runner | ✅ Готово |
-| MetaAgent с RL | ⏳ Планируется |
-| Act 2+ | ⏳ Планируется |
+| Параметр | Значение |
+|----------|----------|
+| Персонаж | Ironclad |
+| Акты | 1–3 (полное прохождение) |
+| Сложность | Ascension 0 |
+| Случайные карты | True Grit, Armaments — не реализованы |
