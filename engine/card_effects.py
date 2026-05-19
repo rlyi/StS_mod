@@ -528,6 +528,10 @@ def reboot_post_hook(state, effect, card, target_index=-1):
     state.draw_cards(amount_to_draw)
 
 
+def bowling_bash_pre_hook(state, effect, card, target_index=-1):
+    effect.hits = len([m for m in state.monsters if m.current_hp > 0])
+
+
 # ── get_card_effects ──────────────────────────────────────────────────────────
 
 def get_card_effects(card, player, draw_pile: list, discard_pile: list, hand: list) -> List[CardEffects]:
@@ -650,6 +654,9 @@ def get_card_effects(card, player, draw_pile: list, discard_pile: list, hand: li
     if card.id == CardId.WILD_STRIKE:
         return [CardEffects(target=TargetType.MONSTER, damage=12 if not card.upgrade else 18, hits=1,
                             spawn_cards_in_draw=(_gc(CardId.WOUND), 1))]
+    if card.id == CardId.BOWLING_BASH:
+        return [CardEffects(target=TargetType.MONSTER, damage=7 if not card.upgrade else 10,
+                            pre_hooks=[bowling_bash_pre_hook])]
     if card.id == CardId.BATTLE_TRANCE:
         return [CardEffects(target=TargetType.SELF, draw=3 if not card.upgrade else 5),
                 CardEffects(target=TargetType.SELF, applies_powers={PowerId.NO_DRAW: 1})]
