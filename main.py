@@ -93,8 +93,11 @@ class SlayTheSpireAI:
                 return StateAction()
             if player.current_hp <= 0:
                 return StateAction()
+            monsters = [m for m in game.monsters if m is not None]
+            if not monsters:
+                return ProceedAction()
             if not any(getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)
-                       for m in game.monsters if m is not None):
+                       for m in monsters):
                 return StateAction()
             action_phase = str(getattr(game, "action_phase", "")).upper()
             if "EXECUTING" in action_phase:
