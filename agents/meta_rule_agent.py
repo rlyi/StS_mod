@@ -135,14 +135,6 @@ _CAMPFIRE_PRE_BOSS    = {15, 32, 49}
 # Boss relic priority
 # ---------------------------------------------------------------------------
 
-_BOSS_RELIC_PRIORITY = [
-    'sozu', 'runic dome', "philosopher's stone", 'ectoplasm',
-    'velvet choker', 'cursed key', 'fusion hammer', 'snecko eye',
-    'mark of pain', 'busted crown', 'coffee dripper', "slaver's collar",
-    'runic cube', 'runic pyramid', 'black blood', 'calling bell',
-    'empty cage', 'black star', 'sacred bark',
-]
-
 _ENERGY_RELICS = {
     'sozu', 'runic dome', "philosopher's stone", 'ectoplasm',
     'velvet choker', 'cursed key', 'fusion hammer', 'mark of pain',
@@ -363,7 +355,7 @@ class RuleMetaAgent(BaseMetaAgent):
         relics = getattr(getattr(game, 'screen', None), 'relics', [])
         act    = getattr(game, 'act', 1)
 
-        prefs = _BOSS_RELIC_PRIORITY.copy()
+        prefs = list(_cfg.BOSS_RELIC_PRIORITY)
 
         has_energy = any(
             getattr(r, 'relic_id', '').lower() in _ENERGY_RELICS

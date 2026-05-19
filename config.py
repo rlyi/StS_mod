@@ -41,6 +41,15 @@ TARGET_DECK: dict[str, int] = {
 # Всё остальное вне TARGET_DECK удаляется после них.
 REMOVAL_PRIORITY: list[str] = ['defend', 'strike']
 
+# Приоритет реликтов босса (первый = самый желанный).
+BOSS_RELIC_PRIORITY: list[str] = [
+    'sozu', 'runic dome', "philosopher's stone", 'ectoplasm',
+    'velvet choker', 'cursed key', 'fusion hammer', 'snecko eye',
+    'mark of pain', 'busted crown', 'coffee dripper', "slaver's collar",
+    'runic cube', 'runic pyramid', 'black blood', 'calling bell',
+    'empty cage', 'black star', 'sacred bark',
+]
+
 # Приоритет апгрейда у костра.
 # По умолчанию — порядок карт из TARGET_DECK плюс стартовые карты в конце.
 UPGRADE_PRIORITY: list[str] = [
