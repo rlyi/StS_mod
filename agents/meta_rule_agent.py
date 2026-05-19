@@ -201,10 +201,10 @@ class RuleMetaAgent(BaseMetaAgent):
             if deck_count >= max_copies:
                 continue
             idx = card_names.index(desired)
-            log.debug("choose_card: picking '%s' (idx=%d)", desired, idx)
+            log.info("[CARD] берём '%s' (idx=%d)", desired, idx)
             return idx
 
-        log.debug("choose_card: skip")
+        log.info("[CARD] skip — ничего из TARGET_DECK не предложено")
         return -1
 
     def choose_card_forced(self, game) -> int:
@@ -305,11 +305,13 @@ class RuleMetaAgent(BaseMetaAgent):
 
         for action in _cfg.CAMPFIRE_PRIORITY:
             if can.get(action) and worthwhile(action):
+                log.info("[CAMPFIRE] этаж=%-2s HP=%.0f%% → %s", floor, hp_pct * 100, action.upper())
                 return action.upper()
 
         # фоллбэк — первое доступное из списка
         for action in _cfg.CAMPFIRE_PRIORITY:
             if can.get(action):
+                log.info("[CAMPFIRE] этаж=%-2s HP=%.0f%% → %s (fallback)", floor, hp_pct * 100, action.upper())
                 return action.upper()
         return 'REST'
 
@@ -372,6 +374,7 @@ class RuleMetaAgent(BaseMetaAgent):
         for pref in _cfg.SHOP_RELICS:
             for i, rname in enumerate(relic_names):
                 if rname == pref and gold >= relic_prices[i]:
+                    log.info("[SHOP] покупаем реликт '%s' за %d (золото=%d)", rname, relic_prices[i], gold)
                     return len(cards) + i
         return None
 
@@ -390,6 +393,7 @@ class RuleMetaAgent(BaseMetaAgent):
                 name  = getattr(card, 'name', getattr(card, 'card_id', '')).lower().rstrip('+')
                 price = getattr(card, 'price', 9999)
                 if name == desired and gold >= price:
+                    log.info("[SHOP] покупаем карту '%s' за %d (золото=%d)", name, price, gold)
                     return i
         return None
 
