@@ -1,47 +1,17 @@
 """
 RuleMetaAgent — rule-based meta-agent ported from bottled_ai's handler logic.
 
-Implements the same strategies as bottled_ai's requested_strike agent
-(Ironclad build around Perfected Strike + combat cards).
+Целевая колода и приоритеты задаются в config.py (TARGET_DECK,
+REMOVAL_PRIORITY, UPGRADE_PRIORITY).
 """
 import logging
+import config as _cfg
 from agents.base_agent import BaseMetaAgent, _screen_type
 from spirecomm.communication.action import (
     ChooseAction, ProceedAction, BuyPurgeAction, PotionAction,
 )
 
 log = logging.getLogger("RuleMeta")
-
-# ---------------------------------------------------------------------------
-# Card selection
-# ---------------------------------------------------------------------------
-
-# Desired cards with max copies to take, in PRIORITY ORDER (first = most desired).
-_DESIRED_CARDS: dict[str, int] = {
-    'perfected strike': 5,
-    'battle trance': 2,
-    'offering': 1,
-    'reaper': 2,
-    'twin strike': 2,
-    'shockwave': 2,
-    'thunderclap': 2,
-    'dropkick': 2,
-    'pommel strike': 2,
-    'shrug it off': 2,
-    'impervious': 2,
-    'ghostly armor': 1,
-    'flame barrier': 1,
-    'blind': 1,
-    'apotheosis': 1,
-    'handofgreed': 1,
-    'master of strategy': 1,
-    'flash of steel': 1,
-    'trip': 1,
-    'dark shackles': 1,
-    'swift strike': 1,
-    'dramatic entrance': 1,
-    'finesse': 1,
-}
 
 # ---------------------------------------------------------------------------
 # Map path scoring  (ported from bottled_ai PathHandlerConfig / Path)
@@ -160,8 +130,6 @@ def _score_path(rooms, hp: float, max_hp: float, gold: float, act: int, game) ->
 _HP_HEAL_THRESHOLD    = 0.60
 _HP_HEAL_FLOOR49      = 0.85
 _CAMPFIRE_PRE_BOSS    = {15, 32, 49}
-_HIGH_PRIORITY_UPGRADES = {'apotheosis', 'perfected strike'}
-_REMOVAL_PRIORITY = ['defend', 'strike', 'defend+', 'strike+']
 
 # ---------------------------------------------------------------------------
 # Boss relic priority
@@ -194,20 +162,6 @@ _SHOP_RELICS = [
     'Happy Flower', 'Bag of Preparation', 'Centennial Puzzle',
 ]
 
-_SHOP_CARDS = ['Offering', 'Shockwave']
-
-# ---------------------------------------------------------------------------
-# Upgrade priority (choose_grid for_upgrade=True)
-# ---------------------------------------------------------------------------
-
-_UPGRADE_PRIORITY = [
-    'apotheosis', 'perfected strike', 'bash', 'shockwave', 'uppercut',
-    'battle trance', 'offering', 'blind', 'seeing red', 'dropkick',
-    'flame barrier', 'twin strike', 'pommel strike', 'handofgreed',
-    'thunderclap', 'shrug it off', 'impervious', 'ghostly armor',
-    'master of strategy', 'flash of steel', 'trip', 'dark shackles',
-    'swift strike', 'dramatic entrance', 'finesse',
-]
 
 # ---------------------------------------------------------------------------
 # Combat reward — undesired relics
@@ -269,13 +223,10 @@ class RuleMetaAgent(BaseMetaAgent):
             k = getattr(c, 'name', getattr(c, 'card_id', '')).lower()
             deck_counts[k] = deck_counts.get(k, 0) + 1
 
-        # Iterate DESIRED_CARDS in priority order — return FIRST match (like bottled_ai)
-        # Strip trailing '+' to match upgraded versions (e.g. 'Thunderclap+' → 'thunderclap')
         card_names = [getattr(c, 'name', getattr(c, 'card_id', '')).lower().rstrip('+') for c in cards]
-        for desired, max_copies in _DESIRED_CARDS.items():
+        for desired, max_copies in _cfg.TARGET_DECK.items():
             if desired not in card_names:
                 continue
-            # Count both upgraded and non-upgraded copies in deck
             deck_count = deck_counts.get(desired, 0) + deck_counts.get(desired + '+', 0)
             if deck_count >= max_copies:
                 continue
@@ -467,12 +418,19 @@ class RuleMetaAgent(BaseMetaAgent):
                 if rname == pref and gold >= relic_prices[i]:
                     return len(cards) + i
 
-        # 4. Priority cards (one copy)
-        for pref in _SHOP_CARDS:
+        # 4. Cards from TARGET_DECK that are still undercounted
+        deck_counts: dict[str, int] = {}
+        for c in getattr(game, 'deck', []):
+            k = getattr(c, 'name', getattr(c, 'card_id', '')).lower().rstrip('+')
+            deck_counts[k] = deck_counts.get(k, 0) + 1
+        for desired, max_copies in _cfg.TARGET_DECK.items():
+            current = deck_counts.get(desired, 0)
+            if current >= max_copies:
+                continue
             for i, card in enumerate(cards):
-                name  = getattr(card, 'name', getattr(card, 'card_id', '')).lower()
+                name  = getattr(card, 'name', getattr(card, 'card_id', '')).lower().rstrip('+')
                 price = getattr(card, 'price', 9999)
-                if name == pref.lower() and gold >= price and name not in deck_names:
+                if name == desired and gold >= price:
                     return i
 
         return -1  # leave shop
@@ -486,11 +444,23 @@ class RuleMetaAgent(BaseMetaAgent):
             return 0
         names = [getattr(c, 'name', getattr(c, 'card_id', '')).lower() for c in cards]
 
-        priorities = _UPGRADE_PRIORITY if for_upgrade else _REMOVAL_PRIORITY
-        for pref in priorities:
+        if for_upgrade:
+            for pref in _cfg.UPGRADE_PRIORITY:
+                for i, name in enumerate(names):
+                    if pref in name:
+                        return i
+            return 0
+
+        # Удаление: сначала REMOVAL_PRIORITY, затем всё вне TARGET_DECK
+        target_keys = set(_cfg.TARGET_DECK.keys())
+        for pref in _cfg.REMOVAL_PRIORITY:
             for i, name in enumerate(names):
                 if pref in name:
                     return i
+        for i, name in enumerate(names):
+            base = name.rstrip('+')
+            if base not in target_keys:
+                return i
         return 0
 
     # --- act() override (shop purge + combat reward) -------------------------
@@ -515,7 +485,7 @@ class RuleMetaAgent(BaseMetaAgent):
         purge_cost = getattr(s, 'purge_cost', 9999)
         if getattr(game, 'gold', 0) < purge_cost:
             return None
-        if _has_removable_curse(game) or _has_removal_priority_card(game):
+        if _has_removable_curse(game) or _has_removal_priority_card(game) or _has_non_target_card(game):
             log.info("[SHOP] buying purge")
             return BuyPurgeAction()
         return None
@@ -613,17 +583,31 @@ def _has_removable_curse(game) -> bool:
 
 
 def _has_high_priority_upgrade(game) -> bool:
+    # Первые две карты из UPGRADE_PRIORITY считаются высокоприоритетными
+    high = set(_cfg.UPGRADE_PRIORITY[:2])
     for card in getattr(game, 'deck', []):
         name     = getattr(card, 'name', '').lower()
         upgraded = getattr(card, 'upgraded', False)
-        if not upgraded and name in _HIGH_PRIORITY_UPGRADES:
+        if not upgraded and name in high:
             return True
     return False
 
 
 def _has_removal_priority_card(game) -> bool:
     names = {getattr(c, 'name', '').lower() for c in getattr(game, 'deck', [])}
-    return any(p in names for p in _REMOVAL_PRIORITY)
+    return any(p in names for p in _cfg.REMOVAL_PRIORITY)
+
+
+def _has_non_target_card(game) -> bool:
+    target = set(_cfg.TARGET_DECK.keys())
+    for card in getattr(game, 'deck', []):
+        name = getattr(card, 'name', getattr(card, 'card_id', '')).lower().rstrip('+')
+        ct   = str(getattr(card, 'type', '')).lower()
+        if 'curse' in ct or 'status' in ct:
+            continue
+        if name not in target:
+            return True
+    return False
 
 
 def _girya_below_max(game) -> bool:
@@ -846,11 +830,11 @@ def _event_choice(event_name: str, event_id: str, hp_pct: float, n_options: int,
         case "Falling":
             options    = getattr(getattr(game, 'screen', None), 'options', [])
             card_names = [getattr(o, 'label', getattr(o, 'text', '')).lower() for o in options]
-            for worst in _REMOVAL_PRIORITY:
+            for worst in _cfg.REMOVAL_PRIORITY:
                 for i, cn in enumerate(card_names):
                     if worst in cn:
                         return i
-            for least in reversed(list(_DESIRED_CARDS.keys())):
+            for least in reversed(list(_cfg.TARGET_DECK.keys())):
                 for i, cn in enumerate(card_names):
                     if least in cn:
                         return i

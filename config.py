@@ -8,6 +8,50 @@ CHARACTER = "IRONCLAD"
 # Варианты: "rule" | "llm"
 META_AGENT = "rule"
 
+# ── Target deck (Perfected Strike build) ───────────────────────────────
+# Карта → максимум копий, которые стоит набирать.
+# Порядок важен: агент берёт карты сверху вниз по приоритету.
+TARGET_DECK: dict[str, int] = {
+    'perfected strike': 5,
+    'battle trance':    2,
+    'offering':         1,
+    'reaper':           2,
+    'twin strike':      2,
+    'shockwave':        2,
+    'thunderclap':      2,
+    'dropkick':         2,
+    'pommel strike':    2,
+    'shrug it off':     2,
+    'impervious':       2,
+    'ghostly armor':    1,
+    'flame barrier':    1,
+    'blind':            1,
+    'apotheosis':       1,
+    'handofgreed':      1,
+    'master of strategy': 1,
+    'flash of steel':   1,
+    'trip':             1,
+    'dark shackles':    1,
+    'swift strike':     1,
+    'dramatic entrance': 1,
+    'finesse':          1,
+}
+
+# Карты, которые удаляются в первую очередь (смит / магазин / события).
+# Всё остальное вне TARGET_DECK удаляется после них.
+REMOVAL_PRIORITY: list[str] = ['defend', 'strike']
+
+# Приоритет апгрейда у костра.
+# По умолчанию — порядок карт из TARGET_DECK плюс стартовые карты в конце.
+UPGRADE_PRIORITY: list[str] = [
+    'apotheosis', 'perfected strike', 'bash', 'shockwave', 'battle trance',
+    'offering', 'blind', 'dropkick', 'flame barrier', 'twin strike',
+    'pommel strike', 'thunderclap', 'shrug it off', 'impervious',
+    'ghostly armor', 'master of strategy', 'flash of steel', 'trip',
+    'dark shackles', 'swift strike', 'dramatic entrance', 'finesse',
+    'reaper', 'handofgreed',
+]
+
 # ── Paths ──────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
