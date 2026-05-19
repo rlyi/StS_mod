@@ -760,7 +760,9 @@ def _event_choice(event_name: str, event_id: str, hp_pct: float, n_options: int,
         # ACT 2 ---------------------------------------------------------------
 
         case "Ancient Writing":
-            return 1
+            no_curses = not _has_removable_curse(game)
+            strike_in_target = any('strike' in k for k in _cfg.TARGET_DECK)
+            return 0 if (no_curses or strike_in_target) else 1
 
         case "Augmenter":
             return 2
@@ -814,11 +816,8 @@ def _event_choice(event_name: str, event_id: str, hp_pct: float, n_options: int,
         case "Vampires(?)":
             if _has_card_in_deck(game, 'apparition'):
                 return 1
-            if _has_relic(game, 'strike dummy'):
-                return 1
-            if _count_card_in_deck(game, 'strike') >= 3:
-                return 0
-            return 1
+            strike_in_target = any('strike' in k for k in _cfg.TARGET_DECK)
+            return 1 if strike_in_target else 0
 
         # ACT 2, 3 ------------------------------------------------------------
 
