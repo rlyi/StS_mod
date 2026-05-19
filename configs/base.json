@@ -12,6 +12,7 @@
   "HP_HEAL_THRESHOLD": 0.6,
   "HP_HEAL_THRESHOLD_BOSS": 0.85,
   "BENCHMARK_MODE": false,
+  "BENCHMARK_SEEDS_COUNT": 100,
   "TARGET_DECK": {
     "perfected strike": 5,
     "battle trance": 2,

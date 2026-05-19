@@ -22,28 +22,30 @@ _BASE_NAME   = "base"
 
 os.makedirs(_CONFIGS_DIR, exist_ok=True)
 
-
-# ── Управление профилями ──────────────────────────────────────────────────────
+# ── Профили: вспомогательные функции ─────────────────────────────────────────
 
 def _list_profiles() -> list[str]:
-    names = [f[:-5] for f in os.listdir(_CONFIGS_DIR) if f.endswith(".json")]
-    names = sorted(n for n in names if n != _BASE_NAME)
+    names = sorted(
+        f[:-5] for f in os.listdir(_CONFIGS_DIR)
+        if f.endswith(".json") and f[:-5] != _BASE_NAME
+    )
     return [_BASE_NAME] + names
 
+@st.cache_data
 def _load_profile(name: str) -> dict:
-    path = os.path.join(_CONFIGS_DIR, f"{name}.json")
-    with open(path, encoding="utf-8") as f:
+    with open(os.path.join(_CONFIGS_DIR, f"{name}.json"), encoding="utf-8") as f:
         return json.load(f)
 
 def _save_profile(name: str, data: dict):
-    path = os.path.join(_CONFIGS_DIR, f"{name}.json")
-    with open(path, "w", encoding="utf-8") as f:
+    with open(os.path.join(_CONFIGS_DIR, f"{name}.json"), "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+    _load_profile.clear()
 
 def _delete_profile(name: str):
     path = os.path.join(_CONFIGS_DIR, f"{name}.json")
     if os.path.exists(path):
         os.remove(path)
+    _load_profile.clear()
 
 def _get_active() -> str:
     if os.path.exists(_ACTIVE_FILE):
@@ -57,26 +59,25 @@ def _set_active(name: str):
     with open(_ACTIVE_FILE, "w", encoding="utf-8") as f:
         f.write(name)
 
+def _make_seeds(n: int) -> list[int]:
+    return [(i + 1) * 101 for i in range(n)]
+
 def _apply_to_config_py(data: dict):
-    """Записывает значения профиля в config.py."""
     with open(_CONFIG_PATH, encoding="utf-8") as f:
         text = f.read()
 
-    # BENCHMARK_MODE
     text = re.sub(
         r"^(BENCHMARK_MODE\s*=\s*)\w+",
         lambda m: f"{m.group(1)}{data['BENCHMARK_MODE']}",
         text, flags=re.MULTILINE,
     )
 
-    # Числовые параметры
-    scalar_keys = [
+    for key in [
         "PATH_FIGHT_REWARD", "PATH_ELITE_REWARD", "PATH_RELIC_REWARD",
         "PATH_CURSE_LOSS", "PATH_UPGRADE_REWARD", "PATH_EVENT_REWARD_A1",
         "PATH_EVENT_REWARD_A2", "PATH_GOLD_SHOP_DIV", "PATH_GOLD_END_DIV",
         "PATH_SURVIVABILITY_K", "HP_HEAL_THRESHOLD", "HP_HEAL_THRESHOLD_BOSS",
-    ]
-    for key in scalar_keys:
+    ]:
         val = data.get(key)
         if val is None:
             continue
@@ -86,88 +87,140 @@ def _apply_to_config_py(data: dict):
             text, flags=re.MULTILINE,
         )
 
-    # TARGET_DECK
-    deck = data.get("TARGET_DECK", {})
-    deck_lines = ["TARGET_DECK: dict[str, int] = {\n"]
+    seeds = _make_seeds(int(data.get("BENCHMARK_SEEDS_COUNT", 100)))
+    rows  = [seeds[i:i+10] for i in range(0, len(seeds), 10)]
+    seeds_str = "BENCHMARK_SEEDS         = [\n"
+    for row in rows:
+        seeds_str += "    " + ", ".join(str(s) for s in row) + ",\n"
+    seeds_str += "]"
+    text = re.sub(
+        r"BENCHMARK_SEEDS\s*=\s*\[[^\]]*\]",
+        seeds_str, text, flags=re.DOTALL,
+    )
+
+    deck  = data.get("TARGET_DECK", {})
+    lines = ["TARGET_DECK: dict[str, int] = {\n"]
     for card, copies in deck.items():
-        deck_lines.append(f"    {repr(card)}: {copies},\n")
-    deck_lines.append("}")
-    new_deck = "".join(deck_lines)
+        lines.append(f"    {repr(card)}: {copies},\n")
+    lines.append("}")
     text = re.sub(
         r"TARGET_DECK: dict\[str, int\] = \{[^}]*\}",
-        new_deck,
-        text, flags=re.DOTALL,
+        "".join(lines), text, flags=re.DOTALL,
     )
 
     with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
         f.write(text)
 
+# ── Валидация названия профиля ────────────────────────────────────────────────
+
+_NAME_RE = re.compile(r'^[a-zA-Zа-яёА-ЯЁ0-9][a-zA-Zа-яёА-ЯЁ0-9 _-]*$')
+
+def _validate_name(name: str, existing: list[str]) -> str | None:
+    if not name:
+        return None
+    if len(name) > 15:
+        return "Максимум 15 символов"
+    if not _NAME_RE.match(name):
+        return "Только буквы, цифры, пробел, _ и -"
+    if "  " in name or "__" in name or "--" in name:
+        return "Нельзя два одинаковых символа подряд"
+    if name in existing:
+        return "Такое название уже занято"
+    return None
+
+# ── Диалог удаления ───────────────────────────────────────────────────────────
+
+@st.dialog("Удалить профиль")
+def _delete_dialog(name: str):
+    st.write(f"Удалить профиль **«{name}»**?")
+    st.caption("Это действие нельзя отменить.")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Удалить", type="primary", use_container_width=True):
+            _delete_profile(name)
+            if _get_active() == name:
+                _set_active(_BASE_NAME)
+                _apply_to_config_py(_load_profile(_BASE_NAME))
+            st.rerun()
+    with c2:
+        if st.button("Отмена", use_container_width=True):
+            st.rerun()
 
 # ── Страница ──────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="StS AI Dashboard", layout="wide")
 st.title("Slay the Spire — AI Dashboard")
 
-importlib.reload(_cfg)
-
-# ── Панель профилей (всегда видна) ───────────────────────────────────────────
-
 profiles = _list_profiles()
 active   = _get_active()
 
+# ── Панель профилей ───────────────────────────────────────────────────────────
+
 st.subheader("Профиль конфига")
-col_sel, col_new, col_del, col_apply = st.columns([3, 2, 2, 2])
+
+col_sel, col_right = st.columns([2, 3])
 
 with col_sel:
-    selected = st.selectbox("Выбрать профиль", profiles,
-                            index=profiles.index(active) if active in profiles else 0,
-                            label_visibility="collapsed")
+    selected = st.selectbox(
+        "Профиль", profiles,
+        index=profiles.index(active) if active in profiles else 0,
+        label_visibility="collapsed",
+    )
+    sel_cols = st.columns([2, 1])
+    with sel_cols[0]:
+        if selected != active and selected != _BASE_NAME:
+            if st.button("Применить", type="primary", use_container_width=True):
+                _set_active(selected)
+                _apply_to_config_py(_load_profile(selected))
+                importlib.reload(_cfg)
+                st.rerun()
+        elif selected == active:
+            st.caption("✓ Активный профиль")
+    with sel_cols[1]:
+        if selected != _BASE_NAME:
+            if st.button("Удалить", use_container_width=True):
+                _delete_dialog(selected)
 
-with col_new:
-    new_name = st.text_input("Название", placeholder="новый профиль",
-                             label_visibility="collapsed", key="new_profile_name")
-with col_del:
-    can_delete = selected != _BASE_NAME
-    if st.button("Удалить", disabled=not can_delete,
-                 help="Нельзя удалить базовый профиль"):
-        _delete_profile(selected)
-        if _get_active() == selected:
-            _set_active(_BASE_NAME)
-            _apply_to_config_py(_load_profile(_BASE_NAME))
-        st.rerun()
+with col_right:
+    new_name      = st.text_input(
+        "Новый профиль", placeholder="название...",
+        max_chars=15, label_visibility="collapsed",
+    )
+    name_stripped = new_name.strip()
+    error         = _validate_name(name_stripped, profiles)
 
-with col_apply:
-    if st.button("Создать копию", disabled=not new_name.strip()):
-        name = new_name.strip()
-        if name not in profiles:
-            _save_profile(name, _load_profile(selected))
-        _set_active(name)
-        _apply_to_config_py(_load_profile(name))
-        st.rerun()
+    st.caption(f"⚠ {error}" if (name_stripped and error) else " ")
 
-is_base = (selected == _BASE_NAME)
-if selected != active:
-    if st.button(f"Применить профиль «{selected}»", type="primary"):
-        _set_active(selected)
-        _apply_to_config_py(_load_profile(selected))
-        importlib.reload(_cfg)
-        st.success(f"Профиль «{selected}» применён — перезапусти main.py.")
-        st.rerun()
+    btn_c1, btn_c2 = st.columns(2)
+    with btn_c1:
+        if st.button("Создать", use_container_width=True,
+                     help="Создать новый профиль с базовыми настройками"):
+            if name_stripped and not error:
+                _save_profile(name_stripped, _load_profile(_BASE_NAME))
+                _set_active(name_stripped)
+                _apply_to_config_py(_load_profile(name_stripped))
+                st.rerun()
+    with btn_c2:
+        if st.button("Копировать", use_container_width=True,
+                     help=f"Скопировать профиль «{selected}»"):
+            if name_stripped and not error:
+                _save_profile(name_stripped, _load_profile(selected))
+                _set_active(name_stripped)
+                _apply_to_config_py(_load_profile(name_stripped))
+                st.rerun()
 
-if is_base:
-    st.info("Базовый профиль — только для чтения. Создай копию чтобы редактировать.")
+if selected == _BASE_NAME:
+    st.caption("Базовый профиль — только для чтения.")
 
 st.divider()
 
 # ── Вкладки ───────────────────────────────────────────────────────────────────
 
-tab_results, tab_config, tab_log = st.tabs(["Результаты", "Конфиг", "Лог"])
+tab_results, tab_config = st.tabs(["Результаты", "Конфиг"])
 
-
-# ── Вкладка 1: Результаты ────────────────────────────────────────────────────
+# ── Вкладка 1: Результаты ─────────────────────────────────────────────────────
 
 with tab_results:
-    importlib.reload(_cfg)
     results_file = _cfg.BENCHMARK_RESULTS_FILE
 
     if not os.path.exists(results_file):
@@ -207,18 +260,43 @@ with tab_results:
             display["win"] = display["win"].map({True: "✓", False: "✗"})
             st.dataframe(display, use_container_width=True, hide_index=True)
 
-
 # ── Вкладка 2: Конфиг ────────────────────────────────────────────────────────
 
 with tab_config:
     profile_data = _load_profile(selected)
+    is_base      = (selected == _BASE_NAME)
 
     st.subheader("Режим")
-    bm = st.toggle("Бенчмарк (BENCHMARK_MODE)",
-                   value=bool(profile_data.get("BENCHMARK_MODE", False)),
+    bm = st.toggle("Бенчмарк", value=bool(profile_data.get("BENCHMARK_MODE", False)),
                    disabled=is_base)
+    if bm:
+        seeds_count = st.slider(
+            "Количество сидов", min_value=10, max_value=200,
+            value=int(profile_data.get("BENCHMARK_SEEDS_COUNT", 100)),
+            step=10, disabled=is_base,
+            help="Сиды генерируются автоматически: 101, 202, 303 ...",
+        )
+    else:
+        seeds_count = int(profile_data.get("BENCHMARK_SEEDS_COUNT", 100))
 
     st.divider()
+
+    st.subheader("Целевая колода")
+    deck_df = pd.DataFrame(
+        [{"Карта": k, "Макс. копий": v}
+         for k, v in profile_data.get("TARGET_DECK", {}).items()]
+    )
+    edited_deck = st.data_editor(
+        deck_df,
+        num_rows="dynamic" if not is_base else "fixed",
+        use_container_width=True,
+        hide_index=True,
+        key="deck_editor",
+        disabled=is_base,
+    )
+
+    st.divider()
+
     st.subheader("Коэффициенты маршрута")
 
     def _num(label, key, lo=0.0, hi=5.0, step=0.1):
@@ -241,6 +319,7 @@ with tab_config:
         psk  = _num("Штраф выживаемости K",   "PATH_SURVIVABILITY_K", 0.0, 50.0, 1.0)
 
     st.divider()
+
     st.subheader("HP-пороги лечения")
     col3, col4 = st.columns(2)
     with col3:
@@ -248,23 +327,12 @@ with tab_config:
                           float(profile_data.get("HP_HEAL_THRESHOLD", 0.6)), 0.05,
                           key="cfg_hp", disabled=is_base)
     with col4:
-        hp_tb = st.slider("Перед боссом", 0.0, 1.0,
+        hp_tb = st.slider("Перед боссом",  0.0, 1.0,
                           float(profile_data.get("HP_HEAL_THRESHOLD_BOSS", 0.85)), 0.05,
                           key="cfg_hp_boss", disabled=is_base)
 
     st.divider()
-    st.subheader("Целевая колода")
-    deck_df = pd.DataFrame(
-        [{"Карта": k, "Макс. копий": v}
-         for k, v in profile_data.get("TARGET_DECK", {}).items()]
-    )
-    edited_deck = st.data_editor(
-        deck_df, num_rows="dynamic" if not is_base else "fixed",
-        use_container_width=True, hide_index=True,
-        key="deck_editor", disabled=is_base,
-    )
 
-    st.divider()
     if not is_base:
         if st.button("Сохранить и применить", type="primary"):
             new_deck = {
@@ -273,13 +341,15 @@ with tab_config:
                 if pd.notna(row["Карта"]) and pd.notna(row["Макс. копий"])
             }
             updated = {
-                "PATH_FIGHT_REWARD":    pf,  "PATH_ELITE_REWARD":    pe,
-                "PATH_RELIC_REWARD":    pr,  "PATH_CURSE_LOSS":      pcl,
-                "PATH_UPGRADE_REWARD":  pu,  "PATH_EVENT_REWARD_A1": pea1,
-                "PATH_EVENT_REWARD_A2": pea2,"PATH_GOLD_SHOP_DIV":   pgs,
-                "PATH_GOLD_END_DIV":    pge, "PATH_SURVIVABILITY_K": psk,
-                "HP_HEAL_THRESHOLD":    hp_t,"HP_HEAL_THRESHOLD_BOSS": hp_tb,
-                "BENCHMARK_MODE":       bm,  "TARGET_DECK":          new_deck,
+                "BENCHMARK_MODE":        bm,
+                "BENCHMARK_SEEDS_COUNT": seeds_count,
+                "TARGET_DECK":           new_deck,
+                "PATH_FIGHT_REWARD":     pf,  "PATH_ELITE_REWARD":    pe,
+                "PATH_RELIC_REWARD":     pr,  "PATH_CURSE_LOSS":      pcl,
+                "PATH_UPGRADE_REWARD":   pu,  "PATH_EVENT_REWARD_A1": pea1,
+                "PATH_EVENT_REWARD_A2":  pea2,"PATH_GOLD_SHOP_DIV":   pgs,
+                "PATH_GOLD_END_DIV":     pge, "PATH_SURVIVABILITY_K": psk,
+                "HP_HEAL_THRESHOLD":     hp_t,"HP_HEAL_THRESHOLD_BOSS": hp_tb,
             }
             _save_profile(selected, updated)
             _set_active(selected)
@@ -287,22 +357,3 @@ with tab_config:
             importlib.reload(_cfg)
             st.success("Сохранено и применено. Перезапусти main.py.")
             st.rerun()
-
-
-# ── Вкладка 3: Лог ───────────────────────────────────────────────────────────
-
-with tab_log:
-    log_choice = st.radio("Файл", ["benchmark.log", "ai.log"], horizontal=True)
-    log_path   = os.path.join(_ROOT, "logs", log_choice)
-    n_lines    = st.slider("Последних строк", 20, 500, 100, step=20, key="log_lines")
-
-    col_btn, _ = st.columns([1, 5])
-    with col_btn:
-        st.button("Обновить", key="log_refresh")
-
-    if not os.path.exists(log_path):
-        st.info(f"Файл не найден: `{log_path}`")
-    else:
-        with open(log_path, encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-        st.text_area("", value="".join(lines[-n_lines:]), height=500, key="log_content")
