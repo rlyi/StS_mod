@@ -75,7 +75,7 @@ DESIRED_POTIONS: list[str] = [
     'potion of capacity', 'heart of iron', 'duplication potion',
     'distilled chaos', 'blessing of the forge', 'attack potion',
     'dexterity potion', 'ambrosia', 'fear potion', 'essence of steel',
-    'strength potion', 'regen potion', 'blood potion', 'entropic brew',
+    'strength potion', 'steroid potion', 'regen potion', 'blood potion', 'entropic brew',
     'liquid bronze', 'energy potion', 'skill potion', 'ancient potion',
     'weak potion', "gambler's brew", 'poison potion', 'colorless potion',
     'flex potion', 'swift potion', 'bottled miracle', 'fire potion',

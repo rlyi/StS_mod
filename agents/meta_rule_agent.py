@@ -507,14 +507,14 @@ class RuleMetaAgent(BaseMetaAgent):
         reward_potion = getattr(reward, 'potion', None)
         if reward_potion is None:
             return None
-        reward_name = getattr(reward_potion, 'potion_id', '').lower()
+        reward_name = _norm_potion(getattr(reward_potion, 'potion_id', ''))
 
         held_potions = getattr(game, 'potions', [])
-        held_names   = [getattr(p, 'potion_id', '').lower() for p in held_potions]
+        held_names   = [_norm_potion(getattr(p, 'potion_id', '')) for p in held_potions]
         all_names    = held_names + [reward_name]
+        desired_norm = [_norm_potion(p) for p in _cfg.DESIRED_POTIONS]
 
-        # Iterate from least desired to most desired
-        for least in reversed(_cfg.DESIRED_POTIONS):
+        for least in reversed(desired_norm):
             if least not in all_names:
                 continue
             if least == reward_name:
@@ -529,6 +529,11 @@ class RuleMetaAgent(BaseMetaAgent):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _norm_potion(potion_id: str) -> str:
+    """Нормализует potion_id: нижний регистр, без пробелов и апострофов."""
+    return potion_id.lower().replace(' ', '').replace("'", '')
+
 
 def _has_relic(game, relic_id_lower: str) -> bool:
     return any(
