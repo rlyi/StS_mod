@@ -93,11 +93,8 @@ class SlayTheSpireAI:
                 return StateAction()
             if player.current_hp <= 0:
                 return StateAction()
-            monsters = [m for m in game.monsters if m is not None]
-            if not monsters:
-                return ProceedAction()
             if not any(getattr(m, "current_hp", 0) > 0 and not getattr(m, "is_gone", False)
-                       for m in monsters):
+                       for m in game.monsters if m is not None):
                 return StateAction()
             action_phase = str(getattr(game, "action_phase", "")).upper()
             if "EXECUTING" in action_phase:
@@ -116,10 +113,8 @@ class SlayTheSpireAI:
               and getattr(self._combat_agent, 'handles_forced_discard', False)):
             return self._combat_agent.act(game)
         else:
-            if player is None and screen in ("MAP", "CHEST", "COMBAT_REWARD"):
-                return StateAction()
             if screen != self._last_screen:
-                hp_str = f"{player.current_hp}/{player.max_hp}"
+                hp_str = f"{player.current_hp}/{player.max_hp}" if player else "?/?"
                 log.info("Экран: %-20s | этаж=%s HP=%s gold=%s",
                          screen, getattr(game, "floor", "?"),
                          hp_str, getattr(game, "gold", "?"))
@@ -291,8 +286,6 @@ class BenchmarkRunner:
             return ProceedAction()
 
         if screen != "NONE":
-            if player is None and screen in ("MAP", "CHEST", "COMBAT_REWARD"):
-                return StateAction()
             self._error_count = 0
             return self._meta_agent.act(game)
 
